@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import Footer from '@/components/wellness/Footer';
 
 const RETREATS = [

@@ -6,6 +6,7 @@ export function createPageUrl(page) {
     'Retreats': '/retreats',
     'Hindu Rituals': '/hindu-rituals',
     'Transcendence Rituals': '/transcendence-rituals',
+    'Booking': '/booking',
   };
   return routes[page] || '/';
 }
