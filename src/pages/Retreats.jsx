@@ -1,126 +1,166 @@
-import React, { useRef } from 'react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import React, { useRef, useState } from 'react';
+import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import Footer from '@/components/wellness/Footer';
 
-const retreats = [
+const RETREATS = [
   {
-    name: 'Silent Mountain',
-    location: 'Himalayas, India',
-    duration: '10 Days',
-    description: 'Complete digital detox in the foothills of the Himalayas. Vipassana meditation, mountain breathwork, and guided silence.',
-    price: 'From $3,200',
-    image: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1000&q=90',
-    spots: '8 spots remaining',
+    name: 'Stress Busting Retreat',
+    duration: '3 — 5 Days',
+    desc: 'An invitation to re-establish yourself as an empty vessel — devoid of stress, mental confusion, and accumulated burdens. This retreat is designed to feel like a holiday: nourishing meals, restorative massage, deep sleep — with transformative educational depth as an added gift.',
+    highlights: ['Therapeutic massage', 'Fresh nourishing meals', 'Deep relaxation practices', 'Inner work sessions'],
+    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=90',
   },
   {
-    name: 'Coastal Renewal',
-    location: 'Algarve, Portugal',
-    duration: '7 Days',
-    description: 'Ocean-front yoga, cold immersion therapy, and somatic healing in a private estate on the Atlantic coast.',
-    price: 'From $2,800',
-    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1000&q=90',
-    spots: '12 spots remaining',
+    name: 'Silent Meditation & Yoga',
+    duration: '5 — 7 Days',
+    desc: 'An opportunity to re-connect with your own deeper self through the power of silence and intentional inner work. Natural settings, vegan meals, and guided silence create the conditions for profound self-inquiry. As the ancient wisdom holds: through silence, one is able to achieve one\'s deepest desire.',
+    highlights: ['Complete silence practice', 'Daily meditation', 'Vegan cuisine', 'Nature immersion', 'Yoga asana', 'Prayer ceremonies'],
+    image: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1200&q=90',
   },
   {
-    name: 'Desert Ceremony',
-    location: 'Atacama, Chile',
-    duration: '5 Days',
-    description: 'Stargazing ceremonies, earth meditations, and indigenous healing rituals under some of the world\'s clearest skies.',
-    price: 'From $4,100',
-    image: 'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=1000&q=90',
-    spots: '6 spots remaining',
+    name: 'Chakra Balancing Retreat',
+    duration: '4 — 6 Days',
+    desc: 'A healing immersion that invites you to take a closer look at your own energy centers. You will balance multiple emotional and physical issues while experiencing the deep pleasure of nature, healing massage, and fresh air — each bringing profound benefits to physical and spiritual health.',
+    highlights: ['7-chakra healing sessions', 'Connecting with nature', 'Healing massage', 'Energy assessments', 'Daily balancing rituals'],
+    image: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1200&q=90',
   },
   {
-    name: 'Forest Temple',
-    location: 'Kyoto, Japan',
-    duration: '8 Days',
-    description: 'Zen Buddhist practices, forest bathing in ancient cryptomeria groves, and tea ceremony in a working monastery.',
-    price: 'From $3,600',
-    image: 'https://images.unsplash.com/photo-1528360983277-13d401cdc186?w=1000&q=90',
-    spots: '4 spots remaining',
+    name: 'Spiritual Healing Retreat',
+    duration: '5 — 7 Days',
+    desc: 'Through daily meditations and group exercises, this retreat invites a deeper dive into the body\'s intelligence and a connection to your inner intuitive self. A time of release, relaxation and pleasure — with profound educational depth as each layer of conditioning gently dissolves.',
+    highlights: ['Daily group meditations', 'Spiritual group exercises', 'Individual healing sessions', 'Intuition development'],
+    image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&q=90',
+  },
+  {
+    name: 'Reiki Healing Retreat',
+    duration: '4 — 5 Days',
+    desc: 'Through the mindful use of Reiki symbols combined with healing energy, this retreat brings health to your physical, emotional, and spiritual bodies — creating an energetic foundation for balance and alignment with your most authentic self.',
+    highlights: ['Daily Reiki sessions', 'Symbol activations', 'Self-healing techniques', 'Attunements available', 'Group healing circles'],
+    image: 'https://images.unsplash.com/photo-1528360983277-13d401cdc186?w=1200&q=90',
+  },
+  {
+    name: 'Forgiveness Retreat',
+    duration: '3 — 4 Days',
+    desc: 'An invitation to forgive people, situations — and most importantly, yourself. Through the practice of forgiveness you will bring awareness to your physical, emotional, and spiritual bodies. Strip away habitual patterns, behavioral stories, and the accumulated weight of resentment.',
+    highlights: ['Ho\'oponopono practice', 'Inner child work', 'Somatic release', 'Group sharing circles', 'Personal ceremony'],
+    image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1200&q=90',
   },
 ];
+
+function RetreatCard({ r, i }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      whileInView={{ opacity: 1 }}
+      viewport={{ once: true, margin: '-60px' }}
+      transition={{ duration: 0.8 }}
+      className="relative overflow-hidden"
+      style={{ borderBottom: '1px solid var(--border)' }}
+    >
+      {/* Full-bleed image */}
+      <div className="relative h-[50vh] lg:h-[60vh] overflow-hidden">
+        <motion.img
+          src={r.image}
+          alt={r.name}
+          className="w-full h-full object-cover"
+          whileHover={{ scale: 1.03 }}
+          transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
+        />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, var(--bg) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)' }} />
+
+        {/* Top label */}
+        <div className="absolute top-6 left-8 flex items-center gap-4">
+          <span className="text-[10px] font-mono text-white/40">{String(i + 1).padStart(2, '0')}</span>
+          <span className="text-[10px] tracking-[0.3em] uppercase text-white/40">{r.duration}</span>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="px-8 lg:px-16 py-12" style={{ background: 'var(--bg)' }}>
+        <div className="lg:grid lg:grid-cols-5 gap-12 lg:gap-16">
+          <div className="lg:col-span-3">
+            <h2
+              className="text-3xl lg:text-5xl mb-6 leading-tight"
+              style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300, color: 'var(--fg)' }}
+            >
+              {r.name}
+            </h2>
+            <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
+              {r.desc}
+            </p>
+          </div>
+
+          <div className="lg:col-span-2 mt-8 lg:mt-0">
+            <p className="text-[10px] tracking-[0.3em] uppercase mb-6" style={{ color: 'var(--fg3)' }}>
+              Retreat Includes
+            </p>
+            <ul className="space-y-3">
+              {r.highlights.map((h) => (
+                <li key={h} className="flex items-center gap-3">
+                  <div className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'var(--fg3)' }} />
+                  <span className="text-sm font-light" style={{ color: 'var(--fg2)' }}>{h}</span>
+                </li>
+              ))}
+            </ul>
+            <motion.a
+              href="mailto:vartikashukla@xyz.com"
+              whileHover={{ x: 4 }}
+              className="inline-block mt-8 text-xs tracking-widest uppercase pb-1 hover:opacity-60 transition-opacity"
+              style={{ color: 'var(--fg2)', borderBottom: '1px solid var(--border2)' }}
+            >
+              Enquire →
+            </motion.a>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 export default function Retreats() {
   const heroRef = useRef(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
-  const y = useTransform(scrollYProgress, [0, 1], ['0%', '25%']);
+  const y = useTransform(scrollYProgress, [0, 1], ['0%', '28%']);
 
   return (
-    <div className="bg-stone-950 min-h-screen">
-      <div ref={heroRef} className="relative h-[60vh] overflow-hidden">
+    <div style={{ background: 'var(--bg)' }}>
+      <div ref={heroRef} className="relative h-[60vh] overflow-hidden" style={{ background: '#0c0a09' }}>
         <motion.div style={{ y }} className="absolute inset-0 scale-110">
           <img
             src="https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1800&q=90"
-            alt="Retreats"
-            className="w-full h-full object-cover opacity-50"
+            alt=""
+            className="w-full h-full object-cover opacity-40"
           />
         </motion.div>
-        <div className="absolute inset-0 bg-gradient-to-b from-stone-950/30 to-stone-950/80" />
-        <div className="absolute inset-0 flex flex-col justify-end p-12 lg:p-20">
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, #0c0a09 0%, transparent 60%)' }} />
+        <div className="absolute bottom-0 left-0 p-10 lg:p-16">
           <motion.p
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-xs tracking-[0.4em] uppercase text-white/50 mb-4"
+            transition={{ duration: 0.7, delay: 0.2 }}
+            className="text-[10px] tracking-[0.45em] uppercase mb-4"
+            style={{ color: 'rgba(250,250,249,0.35)' }}
           >
             Immersive Journeys
           </motion.p>
           <motion.h1
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="text-5xl lg:text-7xl font-extralight text-white tracking-tight"
+            transition={{ duration: 1, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="text-5xl lg:text-7xl font-light tracking-tight"
+            style={{ fontFamily: 'Cormorant Garamond, serif', color: '#fafaf9' }}
           >
             Retreats
           </motion.h1>
         </div>
       </div>
 
-      <div className="px-6 lg:px-12 py-24 space-y-px">
-        {retreats.map((retreat, i) => (
-          <motion.div
-            key={retreat.name}
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-60px' }}
-            transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-            className="group relative overflow-hidden"
-          >
-            <div className="relative h-[70vh] overflow-hidden">
-              <motion.img
-                src={retreat.image}
-                alt={retreat.name}
-                className="w-full h-full object-cover"
-                whileHover={{ scale: 1.03 }}
-                transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/20 to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-10 lg:p-16 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
-                <div>
-                  <p className="text-white/50 text-xs tracking-[0.3em] uppercase mb-3">{retreat.location} · {retreat.duration}</p>
-                  <h2 className="text-4xl lg:text-5xl font-extralight text-white mb-4">{retreat.name}</h2>
-                  <p className="text-white/60 font-light max-w-xl text-[15px] leading-relaxed">{retreat.description}</p>
-                </div>
-                <div className="flex flex-col items-start lg:items-end gap-3 flex-shrink-0">
-                  <p className="text-white text-xl font-extralight">{retreat.price}</p>
-                  <p className="text-white/40 text-xs tracking-wide">{retreat.spots}</p>
-                  <motion.button
-                    whileHover={{ backgroundColor: 'rgba(255,255,255,1)', color: '#1c1917' }}
-                    className="mt-2 px-8 py-3 border border-white/30 text-white text-xs tracking-widest uppercase transition-colors duration-400"
-                  >
-                    Reserve
-                  </motion.button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        ))}
+      <div>
+        {RETREATS.map((r, i) => <RetreatCard key={r.name} r={r} i={i} />)}
       </div>
 
-      <div className="bg-stone-950">
-        <Footer />
-      </div>
+      <Footer />
     </div>
   );
 }

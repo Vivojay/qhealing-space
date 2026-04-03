@@ -1,97 +1,102 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Instagram, Facebook, Youtube, Mail, MapPin, Phone } from 'lucide-react';
+import { Instagram, Mail, MapPin, Phone } from 'lucide-react';
 
 export default function Footer() {
-    return (
-        <footer className="bg-stone-900 text-white py-24">
-            <div className="max-w-7xl mx-auto px-6 lg:px-12">
-                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-12 lg:gap-8 mb-16">
-                    {/* Brand column */}
-                    <div className="lg:col-span-2">
-                        <motion.h3
-                            initial={{ opacity: 0 }}
-                            whileInView={{ opacity: 1 }}
-                            viewport={{ once: true }}
-                            className="text-3xl font-extralight mb-6"
-                        >
-                            Serenity
-                        </motion.h3>
-                        <p className="text-stone-400 font-light leading-relaxed max-w-md mb-8">
-                            A sanctuary dedicated to the art of wellness, where every experience 
-                            is crafted to nurture your journey toward balance and inner peace.
-                        </p>
-                        <div className="flex gap-4">
-                            {[Instagram, Facebook, Youtube].map((Icon, index) => (
-                                <a
-                                    key={index}
-                                    href="#"
-                                    className="w-10 h-10 rounded-full border border-stone-700 flex items-center justify-center hover:border-stone-500 hover:bg-stone-800 transition-all duration-300"
-                                >
-                                    <Icon className="w-4 h-4 text-stone-400" strokeWidth={1.5} />
-                                </a>
-                            ))}
-                        </div>
-                    </div>
+  return (
+    <footer style={{ borderTop: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)' }}>
+      <div className="max-w-7xl mx-auto px-8 lg:px-16 py-20 lg:py-28">
 
-                    {/* Quick links */}
-                    <div>
-                        <h4 className="text-xs tracking-[0.2em] uppercase text-stone-500 mb-6">Explore</h4>
-                        <ul className="space-y-4">
-                            {['Our Story', 'Services', 'Practitioners', 'Retreats', 'Journal'].map((link) => (
-                                <li key={link}>
-                                    <a 
-                                        href="#" 
-                                        className="text-stone-400 font-light hover:text-white transition-colors duration-300"
-                                    >
-                                        {link}
-                                    </a>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
+        <div className="grid lg:grid-cols-3 gap-16 lg:gap-24 mb-20">
 
-                    {/* Contact */}
-                    <div>
-                        <h4 className="text-xs tracking-[0.2em] uppercase text-stone-500 mb-6">Connect</h4>
-                        <ul className="space-y-4">
-                            <li className="flex items-start gap-3">
-                                <MapPin className="w-4 h-4 text-stone-500 mt-1" strokeWidth={1.5} />
-                                <span className="text-stone-400 font-light text-sm">
-                                    123 Tranquil Lane<br />
-                                    Serenity Valley, CA 90210
-                                </span>
-                            </li>
-                            <li className="flex items-center gap-3">
-                                <Phone className="w-4 h-4 text-stone-500" strokeWidth={1.5} />
-                                <span className="text-stone-400 font-light text-sm">+1 (555) 123-4567</span>
-                            </li>
-                            <li className="flex items-center gap-3">
-                                <Mail className="w-4 h-4 text-stone-500" strokeWidth={1.5} />
-                                <span className="text-stone-400 font-light text-sm">hello@serenity.com</span>
-                            </li>
-                        </ul>
-                    </div>
+          {/* Brand */}
+          <div className="lg:col-span-2">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+            >
+              <p className="text-[10px] tracking-[0.5em] uppercase mb-5" style={{ color: 'var(--fg3)' }}>
+                Quantum Healing Space
+              </p>
+              <h3
+                className="text-4xl lg:text-5xl mb-8 leading-tight"
+                style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300, color: 'var(--fg)' }}
+              >
+                A sanctuary for those
+                <br /><em style={{ color: 'var(--fg2)' }}>called to go deeper.</em>
+              </h3>
+              <p className="text-sm font-light leading-relaxed max-w-md mb-10" style={{ color: 'var(--fg2)' }}>
+                Individual Healings · Spiritual Workshops · Retreats · Corporate Interventions.<br />
+                Guided by Vartika Shukla — healer, hypnotherapist, life coach.
+              </p>
+              <a
+                href="https://www.instagram.com/quantum_healingspace"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-3 group"
+              >
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center transition-opacity group-hover:opacity-60"
+                  style={{ border: '1px solid var(--border2)' }}
+                >
+                  <Instagram className="w-4 h-4" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />
                 </div>
+                <span className="text-xs tracking-widest uppercase" style={{ color: 'var(--fg3)' }}>
+                  @quantum_healingspace
+                </span>
+              </a>
+            </motion.div>
+          </div>
 
-                {/* Bottom bar */}
-                <div className="pt-8 border-t border-stone-800 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <p className="text-stone-500 text-sm font-light">
-                        © 2024 Serenity Wellness. All rights reserved.
-                    </p>
-                    <div className="flex gap-6">
-                        {['Privacy', 'Terms', 'Cookies'].map((link) => (
-                            <a
-                                key={link}
-                                href="#"
-                                className="text-stone-500 text-sm font-light hover:text-stone-300 transition-colors"
-                            >
-                                {link}
-                            </a>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        </footer>
-    );
+          {/* Contact */}
+          <div>
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8, delay: 0.15 }}
+            >
+              <p className="text-[10px] tracking-[0.3em] uppercase mb-8" style={{ color: 'var(--fg3)' }}>
+                Connect
+              </p>
+              <ul className="space-y-6">
+                <li className="flex items-start gap-4">
+                  <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--fg3)' }} strokeWidth={1.5} />
+                  <span className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                    Sector 56, Gurugram<br />
+                    Haryana – 122011
+                  </span>
+                </li>
+                <li className="flex items-center gap-4">
+                  <Phone className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--fg3)' }} strokeWidth={1.5} />
+                  <span className="text-sm font-light" style={{ color: 'var(--fg2)' }}>+91 9267904256</span>
+                </li>
+                <li className="flex items-center gap-4">
+                  <Mail className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--fg3)' }} strokeWidth={1.5} />
+                  <span className="text-sm font-light" style={{ color: 'var(--fg2)' }}>vartikashukla@xyz.com</span>
+                </li>
+              </ul>
+            </motion.div>
+          </div>
+
+        </div>
+
+        {/* Bottom bar */}
+        <div
+          className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pt-8"
+          style={{ borderTop: '1px solid var(--border)' }}
+        >
+          <p className="text-xs font-light" style={{ color: 'var(--fg3)' }}>
+            © {new Date().getFullYear()} Quantum Healing Space · All rights reserved.
+          </p>
+          <p className="text-xs font-light" style={{ color: 'var(--fg3)' }}>
+            Individual Healings · Workshops · Retreats · Corporate Programs
+          </p>
+        </div>
+
+      </div>
+    </footer>
+  );
 }

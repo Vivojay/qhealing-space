@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Leaf } from 'lucide-react';
+import { Menu, X, Leaf, Sun, Moon } from 'lucide-react';
+import { useTheme } from '@/context/ThemeContext';
+import ChatBot from '@/components/ChatBot';
 
 const navItems = [
   { label: 'Home', page: 'Home', number: '00' },
@@ -14,82 +16,80 @@ const navItems = [
 ];
 
 export default function Layout({ children }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
+  const { isDark, toggleTheme } = useTheme();
 
   return (
-    <div className="min-h-screen">
-      {/* Desktop Sidebar */}
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--fg)' }}>
+
+      {/* ── Desktop Sidebar ── */}
       <motion.aside
         initial={false}
-        animate={{ width: isExpanded ? 260 : 64 }}
+        animate={{ width: expanded ? 252 : 60 }}
         transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        onMouseEnter={() => setIsExpanded(true)}
-        onMouseLeave={() => setIsExpanded(false)}
-        className="fixed left-0 top-0 h-full bg-stone-950 z-50 hidden lg:flex flex-col overflow-hidden"
+        onMouseEnter={() => setExpanded(true)}
+        onMouseLeave={() => setExpanded(false)}
+        className="fixed left-0 top-0 h-full hidden lg:flex flex-col overflow-hidden"
+        style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)', zIndex: 50 }}
       >
-        {/* Logo mark */}
-        <div className="h-20 flex items-center px-5 border-b border-white/5">
-          <div className="flex items-center gap-4 min-w-0">
-            <div className="w-8 h-8 rounded-full border border-white/20 flex items-center justify-center flex-shrink-0">
-              <Leaf className="w-3.5 h-3.5 text-white/70" strokeWidth={1.5} />
+        {/* Logo */}
+        <div className="h-[72px] flex items-center px-4" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-3.5">
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ border: '1px solid var(--border2)' }}
+            >
+              <Leaf className="w-3 h-3" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />
             </div>
             <AnimatePresence>
-              {isExpanded && (
-                <motion.div
+              {expanded && (
+                <motion.span
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -8 }}
-                  transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-                  className="overflow-hidden"
+                  transition={{ duration: 0.2 }}
+                  className="text-[11px] tracking-[0.18em] uppercase whitespace-nowrap"
+                  style={{ color: 'var(--fg2)', fontFamily: 'Space Grotesk, sans-serif' }}
                 >
-                  <span className="text-white/80 text-sm font-light tracking-[0.15em] uppercase whitespace-nowrap">
-                    Serenity
-                  </span>
-                </motion.div>
+                  QHS
+                </motion.span>
               )}
             </AnimatePresence>
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 py-10 flex flex-col gap-0.5 px-3">
-          {navItems.map((item, index) => {
+        {/* Nav */}
+        <nav className="flex-1 py-8 px-2 flex flex-col gap-0.5">
+          {navItems.map((item, i) => {
             const href = createPageUrl(item.page);
-            const isActive = location.pathname === href;
-
+            const active = location.pathname === href;
             return (
-              <Link
-                key={item.page}
-                to={href}
-                className="group relative flex items-center gap-4 px-2 py-3 rounded"
-              >
-                {/* Active indicator */}
-                {isActive && (
+              <Link key={item.page} to={href} className="group relative flex items-center gap-4 px-2 py-3 rounded">
+                {active && (
                   <motion.div
-                    layoutId="activeNavPill"
-                    className="absolute inset-0 bg-white/5 rounded"
+                    layoutId="active-pill"
+                    className="absolute inset-0 rounded"
+                    style={{ background: 'var(--border)' }}
                     transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                   />
                 )}
-
-                {/* Number */}
-                <span className={`text-[10px] font-mono flex-shrink-0 transition-colors duration-300 ${isActive ? 'text-white/40' : 'text-white/15 group-hover:text-white/30'}`}>
+                <span
+                  className="text-[10px] font-mono flex-shrink-0 relative"
+                  style={{ color: active ? 'var(--fg2)' : 'var(--fg3)' }}
+                >
                   {item.number}
                 </span>
-
-                {/* Label */}
                 <AnimatePresence>
-                  {isExpanded && (
+                  {expanded && (
                     <motion.span
                       initial={{ opacity: 0, x: -6 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: -6 }}
-                      transition={{ duration: 0.2, delay: index * 0.02 }}
-                      className={`text-sm font-light whitespace-nowrap transition-colors duration-300 ${
-                        isActive ? 'text-white' : 'text-white/40 group-hover:text-white/80'
-                      }`}
+                      transition={{ duration: 0.18, delay: i * 0.02 }}
+                      className="text-sm font-light whitespace-nowrap relative"
+                      style={{ color: active ? 'var(--fg)' : 'var(--fg2)' }}
                     >
                       {item.label}
                     </motion.span>
@@ -100,74 +100,75 @@ export default function Layout({ children }) {
           })}
         </nav>
 
-        {/* Bottom decoration */}
-        <div className="p-5 border-t border-white/5">
+        {/* Bottom */}
+        <div className="p-4" style={{ borderTop: '1px solid var(--border)' }}>
           <AnimatePresence>
-            {isExpanded ? (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <p className="text-[10px] tracking-[0.2em] uppercase text-white/20 mb-1">Book a Session</p>
-                <p className="text-xs text-white/30 font-light">+1 (555) 123-4567</p>
+            {expanded ? (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <p className="text-[10px] tracking-[0.2em] uppercase mb-1" style={{ color: 'var(--fg3)' }}>Connect</p>
+                <p className="text-[11px] font-light" style={{ color: 'var(--fg2)' }}>+91 9267904256</p>
               </motion.div>
             ) : (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="w-full h-px bg-white/10"
-              />
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                className="h-px w-full" style={{ background: 'var(--border)' }} />
             )}
           </AnimatePresence>
         </div>
       </motion.aside>
 
-      {/* Mobile Header */}
-      <header className="fixed top-0 left-0 right-0 h-14 bg-stone-950/95 backdrop-blur-md z-50 lg:hidden flex items-center justify-between px-5">
+      {/* ── Mobile Header ── */}
+      <header
+        className="fixed top-0 left-0 right-0 h-14 lg:hidden flex items-center justify-between px-5"
+        style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)', zIndex: 50 }}
+      >
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded-full border border-white/20 flex items-center justify-center">
-            <Leaf className="w-3 h-3 text-white/70" strokeWidth={1.5} />
+          <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ border: '1px solid var(--border2)' }}>
+            <Leaf className="w-3 h-3" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />
           </div>
-          <span className="text-sm font-light tracking-[0.15em] uppercase text-white/80">Serenity</span>
+          <span className="text-xs tracking-[0.18em] uppercase" style={{ color: 'var(--fg2)' }}>QHS</span>
         </div>
-        <button
-          onClick={() => setIsMobileOpen(!isMobileOpen)}
-          className="w-9 h-9 flex items-center justify-center text-white/60 hover:text-white transition-colors"
-        >
-          {isMobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={toggleTheme} className="w-8 h-8 flex items-center justify-center rounded-full transition-opacity hover:opacity-60">
+            {isDark
+              ? <Sun className="w-4 h-4" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />
+              : <Moon className="w-4 h-4" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />}
+          </button>
+          <button onClick={() => setMobileOpen(p => !p)} className="w-8 h-8 flex items-center justify-center" style={{ color: 'var(--fg2)' }}>
+            {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          </button>
+        </div>
       </header>
 
-      {/* Mobile Menu */}
+      {/* ── Mobile Menu ── */}
       <AnimatePresence>
-        {isMobileOpen && (
+        {mobileOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="fixed inset-0 bg-stone-950 z-40 lg:hidden pt-14"
+            className="fixed inset-0 lg:hidden pt-14"
+            style={{ background: 'var(--bg)', zIndex: 40 }}
           >
             <nav className="p-6 pt-10">
-              {navItems.map((item, index) => {
+              {navItems.map((item, i) => {
                 const href = createPageUrl(item.page);
-                const isActive = location.pathname === href;
+                const active = location.pathname === href;
                 return (
                   <motion.div
                     key={item.page}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.06, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{ delay: i * 0.06, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                   >
                     <Link
                       to={href}
-                      onClick={() => setIsMobileOpen(false)}
-                      className="flex items-center gap-5 py-5 border-b border-white/5 group"
+                      onClick={() => setMobileOpen(false)}
+                      className="flex items-center gap-5 py-5 group"
+                      style={{ borderBottom: '1px solid var(--border)' }}
                     >
-                      <span className="text-[10px] font-mono text-white/20">{item.number}</span>
-                      <span className={`text-xl font-light transition-colors ${isActive ? 'text-white' : 'text-white/40 group-hover:text-white/70'}`}>
+                      <span className="text-[10px] font-mono" style={{ color: 'var(--fg3)' }}>{item.number}</span>
+                      <span className="text-xl font-light" style={{ color: active ? 'var(--fg)' : 'var(--fg2)' }}>
                         {item.label}
                       </span>
                     </Link>
@@ -179,10 +180,39 @@ export default function Layout({ children }) {
         )}
       </AnimatePresence>
 
-      {/* Main Content */}
-      <main className="lg:pl-16 pt-14 lg:pt-0">
+      {/* ── Theme Toggle (Desktop, top-right fixed) ── */}
+      <motion.button
+        onClick={toggleTheme}
+        className="fixed top-5 right-5 lg:right-8 w-9 h-9 rounded-full flex items-center justify-center"
+        style={{
+          background: 'var(--bg2)',
+          border: '1px solid var(--border2)',
+          zIndex: 60,
+          color: 'var(--fg2)',
+        }}
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        transition={{ duration: 0.2 }}
+      >
+        <AnimatePresence mode="wait">
+          {isDark ? (
+            <motion.div key="sun" initial={{ rotate: -60, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 60, opacity: 0 }} transition={{ duration: 0.25 }}>
+              <Sun className="w-3.5 h-3.5" strokeWidth={1.5} />
+            </motion.div>
+          ) : (
+            <motion.div key="moon" initial={{ rotate: 60, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: -60, opacity: 0 }} transition={{ duration: 0.25 }}>
+              <Moon className="w-3.5 h-3.5" strokeWidth={1.5} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.button>
+
+      {/* ── Main Content ── */}
+      <main className="lg:pl-[60px] pt-14 lg:pt-0">
         {children}
       </main>
+
+      <ChatBot />
     </div>
   );
 }

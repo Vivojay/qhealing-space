@@ -44,8 +44,8 @@ export default function TranscendenceRituals() {
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
 
   return (
-    <div className="bg-stone-950 min-h-screen text-white">
-      <div ref={heroRef} className="relative h-[75vh] overflow-hidden">
+    <div style={{ background: 'var(--bg)', minHeight: '100vh', color: 'var(--fg)' }}>
+      <div ref={heroRef} className="relative h-[75vh] overflow-hidden" style={{ background: '#0c0a09' }}>
         <motion.div style={{ y }} className="absolute inset-0 scale-110">
           <img
             src="https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1800&q=90"
@@ -53,7 +53,7 @@ export default function TranscendenceRituals() {
             className="w-full h-full object-cover opacity-60"
           />
         </motion.div>
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-stone-950/30 to-stone-950" />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, transparent, rgba(12,10,9,0.3), #0c0a09)' }} />
         <div className="absolute inset-0 flex flex-col justify-center items-center text-center px-6">
           <motion.p
             initial={{ opacity: 0, y: 20 }}
