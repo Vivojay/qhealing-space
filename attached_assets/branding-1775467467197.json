@@ -1,0 +1,98 @@
+{
+  "colorScheme": "light",
+  "fonts": [
+    {
+      "family": "HyundaiSansHead",
+      "role": "heading"
+    },
+    {
+      "family": "HyundaiSansText",
+      "role": "body"
+    },
+    {
+      "family": "Neue Montreal",
+      "role": "unknown"
+    }
+  ],
+  "colors": {
+    "primary": "#002C5F",
+    "accent": "#004489",
+    "background": "#FFFFFF",
+    "textPrimary": "#1C1B1B",
+    "link": "#004489"
+  },
+  "typography": {
+    "fontFamilies": {
+      "primary": "HyundaiSansText",
+      "heading": "HyundaiSansHead"
+    },
+    "fontStacks": {
+      "heading": [
+        "HyundaiSansText",
+        "Arial",
+        "sans-serif"
+      ],
+      "body": [
+        "HyundaiSansText",
+        "Arial",
+        "sans-serif"
+      ],
+      "paragraph": [
+        "HyundaiSansText",
+        "Arial",
+        "sans-serif"
+      ]
+    },
+    "fontSizes": {
+      "h1": "10px",
+      "h2": "10px",
+      "body": "20px"
+    }
+  },
+  "spacing": {
+    "baseUnit": 4,
+    "borderRadius": "0px"
+  },
+  "components": {},
+  "images": {
+    "logo": "File saved at: attached_assets/logo.svg",
+    "favicon": "https://convencion-hyundai.plastic.design/favicon.svg",
+    "ogImage": null
+  },
+  "__llm_logo_reasoning": {
+    "selectedIndex": 0,
+    "reasoning": "Selected #0 because it is visible, located in the header, and matches the brand inferred from the page title 'Convención Hyundai España'.",
+    "confidence": 0.85,
+    "source": "llm"
+  },
+  "personality": {
+    "tone": "professional",
+    "energy": "medium",
+    "targetAudience": "Hyundai Spain event attendees"
+  },
+  "designSystem": {
+    "framework": "custom",
+    "componentLibrary": ""
+  },
+  "confidence": {
+    "buttons": 0,
+    "colors": 0.9,
+    "overall": 0.45
+  },
+  "__llm_metadata": {
+    "logoSelection": {
+      "llmCalled": true,
+      "llmSucceeded": true,
+      "finalSource": "llm",
+      "rawLogoSelection": {
+        "selectedLogoIndex": 0,
+        "selectedLogoReasoning": "Selected #0 because it is visible, located in the header, and matches the brand inferred from the page title 'Convención Hyundai España'.",
+        "confidence": 0.85
+      }
+    },
+    "buttonClassification": {
+      "llmCalled": false,
+      "llmSucceeded": false
+    }
+  }
+}

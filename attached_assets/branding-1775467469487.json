@@ -1,0 +1,142 @@
+{
+  "colorScheme": "light",
+  "fonts": [
+    {
+      "family": "sans-serif",
+      "count": 5
+    },
+    {
+      "family": "ui-sans-serif",
+      "count": 2
+    },
+    {
+      "family": "system-ui",
+      "count": 2
+    },
+    {
+      "family": "-apple-system",
+      "count": 2
+    },
+    {
+      "family": "BlinkMacSystemFont",
+      "count": 2
+    },
+    {
+      "family": "Segoe UI",
+      "count": 2
+    },
+    {
+      "family": "Roboto",
+      "count": 2
+    },
+    {
+      "family": "Helvetica Neue",
+      "count": 2
+    },
+    {
+      "family": "Arial",
+      "count": 2
+    },
+    {
+      "family": "Noto Sans",
+      "count": 2
+    }
+  ],
+  "colors": {
+    "primary": "#EACFCA",
+    "accent": "#1925AA",
+    "background": "#E8E6E0",
+    "textPrimary": "#1925AA",
+    "link": "#1925AA"
+  },
+  "typography": {
+    "fontFamilies": {
+      "primary": "ui-sans-serif",
+      "heading": "PP Neue Montreal"
+    },
+    "fontStacks": {
+      "body": [
+        "ui-sans-serif",
+        "system-ui",
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Segoe UI",
+        "Roboto",
+        "Helvetica Neue",
+        "Arial",
+        "Noto Sans",
+        "sans-serif",
+        "Apple Color Emoji",
+        "Segoe UI Emoji",
+        "Segoe UI Symbol",
+        "Noto Color Emoji"
+      ],
+      "heading": [
+        "PP Neue Montreal",
+        "sans-serif"
+      ],
+      "paragraph": [
+        "ui-sans-serif",
+        "system-ui",
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Segoe UI",
+        "Roboto",
+        "Helvetica Neue",
+        "Arial",
+        "Noto Sans",
+        "sans-serif",
+        "Apple Color Emoji",
+        "Segoe UI Emoji",
+        "Segoe UI Symbol",
+        "Noto Color Emoji"
+      ]
+    },
+    "fontSizes": {
+      "h1": "213.333px",
+      "h2": "213.333px",
+      "body": "21.3333px"
+    }
+  },
+  "spacing": {
+    "baseUnit": 4,
+    "borderRadius": "8px"
+  },
+  "components": {},
+  "images": {
+    "logo": null,
+    "favicon": "File saved at: attached_assets/favicon.ico",
+    "ogImage": "File saved at: attached_assets/ogImage.jpg"
+  },
+  "personality": {
+    "tone": "professional",
+    "energy": "medium",
+    "targetAudience": "unknown"
+  },
+  "designSystem": {
+    "framework": "unknown",
+    "componentLibrary": ""
+  },
+  "confidence": {
+    "buttons": 0,
+    "colors": 0,
+    "overall": 0
+  },
+  "__llm_metadata": {
+    "logoSelection": {
+      "llmCalled": false,
+      "llmSucceeded": false,
+      "finalSource": "none",
+      "rawLogoSelection": {
+        "selectedLogoIndex": -1,
+        "selectedLogoReasoning": "LLM failed",
+        "confidence": 0
+      }
+    },
+    "buttonClassification": {
+      "llmCalled": false,
+      "llmSucceeded": false,
+      "error": "LLM call failed or returned fallback values"
+    }
+  }
+}
