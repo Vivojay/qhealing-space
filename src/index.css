@@ -30,6 +30,13 @@
   --bg-accent-section: #15243a;
   --bg-accent-section-2: #1a2d47;
 
+  /* Hindu-rituals page — deep saffron/burnt-orange tint */
+  --bg-accent-orange: #2a160a;
+  --bg-accent-orange-2: #371d0d;
+  --orange-deep: #C8823C;
+  --orange-deep-soft: rgba(200, 130, 60, 0.18);
+  --orange-deep-dim: rgba(200, 130, 60, 0.08);
+
   --font-sans: 'Inter Tight', 'Inter', system-ui, sans-serif;
   --font-display: 'Manrope', 'Inter Tight', sans-serif;
   --font-grotesk: 'Space Grotesk', sans-serif;
@@ -64,6 +71,13 @@ html.light-mode {
   /* Alternating section background — soft accent-blue tint */
   --bg-accent-section: #DCE5EE;
   --bg-accent-section-2: #C9D5E2;
+
+  /* Hindu-rituals page — warm tan/saffron tint */
+  --bg-accent-orange: #E8D4B8;
+  --bg-accent-orange-2: #DEC59E;
+  --orange-deep: #9A5A23;
+  --orange-deep-soft: rgba(154, 90, 35, 0.16);
+  --orange-deep-dim: rgba(154, 90, 35, 0.07);
 }
 
 html {
@@ -98,11 +112,24 @@ html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-smooth { scroll-behavior: auto !important; }
 .lenis.lenis-stopped { overflow: hidden; }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
+/* Scrollbar — high-contrast per theme */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+::-webkit-scrollbar-thumb {
+  background: rgba(245, 246, 250, 0.45);  /* dark mode: bright thumb */
+  border-radius: 4px;
+  border: 2px solid var(--bg);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--accent-bright); background-clip: padding-box; }
+html.light-mode ::-webkit-scrollbar-thumb {
+  background: rgba(20, 22, 28, 0.55);     /* light mode: dark thumb */
+  border: 2px solid var(--bg);
+  background-clip: padding-box;
+}
+html.light-mode ::-webkit-scrollbar-thumb:hover { background: rgba(20,22,28, 0.85); background-clip: padding-box; }
+html { scrollbar-color: rgba(245,246,250,0.45) transparent; scrollbar-width: thin; }
+html.light-mode { scrollbar-color: rgba(20,22,28,0.55) transparent; }
 
 ::selection { background: var(--accent-soft); color: var(--fg); }
 
@@ -199,6 +226,17 @@ html.lenis, html.lenis body { height: auto; }
   position: relative;
 }
 .section-accent.section-accent-2 { background: var(--bg-accent-section-2); }
+
+/* Saffron / burnt-orange variant for Hindu Rituals */
+.section-orange { background: var(--bg-accent-orange); color: var(--fg); position: relative; }
+.section-orange.section-orange-2 { background: var(--bg-accent-orange-2); }
+
+/* ───────── Mandala / kaleidoscope decorative spinner ─────────
+   Slow rotating SVG-friendly container, used as a culturally-rooted
+   background flourish on Hindu Rituals & ritual sections. */
+@keyframes mandala-spin { to { transform: rotate(360deg); } }
+.mandala-rotate { animation: mandala-spin 80s linear infinite; transform-origin: center; }
+.mandala-rotate-rev { animation: mandala-spin 120s linear infinite reverse; transform-origin: center; }
 
 /* ───────── Friendly expandable highlight link ─────────
    A hyperlink whose accent background expands behind the text

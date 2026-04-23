@@ -5,33 +5,110 @@ import Footer from '@/components/wellness/Footer';
 const rituals = [
   {
     name: 'Agni Hotra',
+    sanskrit: 'अग्निहोत्र',
     time: 'Dawn & Dusk',
-    description: 'The ancient Vedic fire ceremony performed at the precise moment of sunrise and sunset. Sacred offerings of rice and ghee into the fire purify the atmosphere and the practitioner\'s consciousness simultaneously.',
+    description:
+      "The ancient Vedic fire ceremony performed at the precise moment of sunrise and sunset. Sacred offerings of rice and ghee into the fire purify the atmosphere and the practitioner's consciousness simultaneously.",
     mantra: 'Svāhā',
     image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=900&q=90',
   },
   {
     name: 'Abhisheka',
+    sanskrit: 'अभिषेक',
     time: 'Monthly',
-    description: 'The sacred bathing of the deity with milk, honey, rosewater, and sandalwood paste, accompanied by Vedic chanting. This ritual of devotional offering purifies the subtle body of the participant through selfless love.',
+    description:
+      'The sacred bathing of the deity with milk, honey, rosewater, and sandalwood paste, accompanied by Vedic chanting. This ritual of devotional offering purifies the subtle body of the participant through selfless love.',
     mantra: 'Om Namah Shivaya',
     image: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=900&q=90',
   },
   {
     name: 'Prana Pratishtha',
+    sanskrit: 'प्राण प्रतिष्ठा',
     time: 'Ceremonial',
-    description: 'The invocation of divine consciousness into a sacred object or space. A complex ritual sequence that awakens dormant spiritual energy within a carefully consecrated vessel — bridging the seen and unseen worlds.',
+    description:
+      'The invocation of divine consciousness into a sacred object or space. A complex ritual sequence that awakens dormant spiritual energy within a carefully consecrated vessel — bridging the seen and unseen worlds.',
     mantra: 'Om Tat Sat',
     image: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=900&q=90',
   },
   {
     name: 'Sankalpa Ritual',
+    sanskrit: 'संकल्प',
     time: 'New Moon',
-    description: 'Setting a sacred intention aligned with cosmic cycles. Performed on new moon nights, this ritual harnesses the potent energy of new beginnings to plant seeds of spiritual transformation into fertile soil.',
+    description:
+      'Setting a sacred intention aligned with cosmic cycles. Performed on new moon nights, this ritual harnesses the potent energy of new beginnings to plant seeds of spiritual transformation into fertile soil.',
     mantra: 'Aham Brahmāsmi',
     image: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=900&q=90',
   },
 ];
+
+/* ──────────────────────────────────────────
+   Sri Yantra-inspired SVG mandala
+   Used as a slowly rotating background flourish.
+   ────────────────────────────────────────── */
+function Mandala({ size = 480, opacity = 0.08, reverse = false, className = '' }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 200 200"
+      className={`${reverse ? 'mandala-rotate-rev' : 'mandala-rotate'} ${className}`}
+      style={{ opacity }}
+      aria-hidden="true"
+    >
+      <g fill="none" stroke="currentColor" strokeWidth="0.4">
+        <circle cx="100" cy="100" r="98" />
+        <circle cx="100" cy="100" r="84" />
+        <circle cx="100" cy="100" r="70" />
+        <circle cx="100" cy="100" r="56" />
+        <circle cx="100" cy="100" r="42" />
+        <circle cx="100" cy="100" r="28" />
+        <circle cx="100" cy="100" r="14" />
+        {/* 12 radial spokes */}
+        {Array.from({ length: 12 }).map((_, i) => {
+          const a = (i * 30 * Math.PI) / 180;
+          const x2 = 100 + Math.cos(a) * 98;
+          const y2 = 100 + Math.sin(a) * 98;
+          return <line key={i} x1="100" y1="100" x2={x2} y2={y2} />;
+        })}
+        {/* Sri Yantra-style triangles (4 up, 4 down) */}
+        {[0, 45, 90, 135].map((rot, i) => (
+          <polygon
+            key={`t-${i}`}
+            points="100,30 140,140 60,140"
+            transform={`rotate(${rot} 100 100)`}
+            strokeWidth="0.5"
+          />
+        ))}
+        {/* Lotus petals around r=70 */}
+        {Array.from({ length: 16 }).map((_, i) => {
+          const a = (i * 22.5 * Math.PI) / 180;
+          const cx = 100 + Math.cos(a) * 70;
+          const cy = 100 + Math.sin(a) * 70;
+          return <ellipse key={`p-${i}`} cx={cx} cy={cy} rx="6" ry="14" transform={`rotate(${i * 22.5} ${cx} ${cy})`} />;
+        })}
+      </g>
+    </svg>
+  );
+}
+
+/* Om / Aum decorative glyph — culturally significant, contemporary stroke */
+function OmGlyph({ size = 56, opacity = 0.9, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" style={{ opacity }} aria-hidden="true">
+      <text
+        x="50"
+        y="68"
+        textAnchor="middle"
+        fontFamily="Cormorant Garamond, serif"
+        fontSize="64"
+        fontWeight="300"
+        fill={color}
+      >
+        ॐ
+      </text>
+    </svg>
+  );
+}
 
 export default function HinduRituals() {
   const heroRef = useRef(null);
@@ -40,95 +117,251 @@ export default function HinduRituals() {
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
-      <div ref={heroRef} className="relative h-[60vh] overflow-hidden" style={{ background: '#1a0e00' }}>
+      {/* ═══ HERO ═══ */}
+      <div ref={heroRef} className="relative h-[72vh] overflow-hidden" style={{ background: '#1a0e00' }}>
         <motion.div style={{ y }} className="absolute inset-0 scale-110">
           <img
             src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=1800&q=90"
             alt=""
-            className="w-full h-full object-cover opacity-45"
+            className="w-full h-full object-cover opacity-50"
           />
         </motion.div>
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, #0c0a09 0%, rgba(26,14,0,0.5) 60%, transparent 100%)' }} />
-        <div className="absolute bottom-0 left-0 p-10 lg:p-16">
-          <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.2 }}
-            className="text-[10px] tracking-[0.45em] uppercase mb-4"
-            style={{ color: 'rgba(250,200,100,0.5)' }}
-          >
-            Vedic Traditions
-          </motion.p>
-          <motion.h1
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className="text-5xl lg:text-7xl font-light tracking-tight"
-            style={{ fontFamily: 'Cormorant Garamond, serif', color: '#fafaf9' }}
-          >
-            Hindu Rituals
-          </motion.h1>
+
+        {/* layered gradient + warm color-pop */}
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, #0c0a09 0%, rgba(26,14,0,0.55) 55%, transparent 100%)' }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 80% 30%, rgba(220,140,60,0.25), transparent 55%)' }} />
+
+        {/* Rotating mandala flourish */}
+        <div className="absolute -right-32 -top-32 pointer-events-none" style={{ color: '#FAD58A' }}>
+          <Mandala size={640} opacity={0.13} />
+        </div>
+
+        <div className="absolute bottom-0 left-0 right-0 p-10 lg:p-16">
+          <div className="max-w-7xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.2 }}
+              className="flex items-center gap-3 mb-5"
+            >
+              <span className="text-[10px] tracking-[0.45em] uppercase" style={{ color: 'rgba(250,200,100,0.6)' }}>
+                ◊ Vedic Traditions
+              </span>
+              <span className="h-px w-12" style={{ background: 'rgba(250,200,100,0.4)' }} />
+              <span className="text-[10px] tracking-[0.3em] uppercase" style={{ color: 'rgba(250,200,100,0.4)' }}>
+                सनातन धर्म
+              </span>
+            </motion.div>
+
+            <motion.h1
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              className="hero-display text-6xl lg:text-[8.5rem]"
+              style={{ color: '#fafaf9', lineHeight: 0.88 }}
+            >
+              Hindu{' '}
+              <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontWeight: 300, letterSpacing: '-0.03em', color: 'rgba(250,200,120,0.95)' }}>
+                Rituals
+              </span>
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 0.55 }}
+              className="mt-6 max-w-xl text-[15px] font-light leading-relaxed"
+              style={{ color: 'rgba(250,245,235,0.7)' }}
+            >
+              Four living ceremonies, transmitted through the lineage — adapted for the contemporary seeker.
+            </motion.p>
+          </div>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-8 lg:px-16 py-28 lg:py-36">
-        <div style={{ borderBottom: '1px solid var(--border)' }}>
-          {rituals.map((ritual, i) => (
+      {/* ═══ MARQUEE — Sanskrit names floating ═══ */}
+      <div className="overflow-hidden py-8" style={{ background: 'var(--bg-accent-orange)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+        <motion.div
+          className="flex gap-16 whitespace-nowrap"
+          animate={{ x: ['0%', '-50%'] }}
+          transition={{ duration: 40, repeat: Infinity, ease: 'linear' }}
+          style={{ width: 'max-content' }}
+        >
+          {[...rituals, ...rituals, ...rituals].map((r, i) => (
+            <span
+              key={i}
+              className="text-3xl lg:text-5xl"
+              style={{
+                fontFamily: 'Cormorant Garamond, serif',
+                fontStyle: 'italic',
+                fontWeight: 300,
+                color: 'var(--orange-deep)',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              {r.name} <span style={{ opacity: 0.4 }}>·</span> <span className="font-sans" style={{ fontStyle: 'normal', fontWeight: 400 }}>{r.sanskrit}</span> <span style={{ opacity: 0.4 }}>·</span>
+            </span>
+          ))}
+        </motion.div>
+      </div>
+
+      {/* ═══ RITUALS — alternating sections ═══ */}
+      {rituals.map((ritual, i) => {
+        const isAccent = i % 2 === 1;
+        const reversed = i % 2 === 1;
+        return (
+          <section
+            key={ritual.name}
+            className={`relative overflow-hidden py-28 lg:py-40 ${isAccent ? 'section-orange' : ''}`}
+            style={{ borderTop: '1px solid var(--border)' }}
+          >
+            {/* Decorative mandala — alternating corner */}
+            <div
+              className={`absolute pointer-events-none ${reversed ? '-left-40 -bottom-40' : '-right-40 -top-40'}`}
+              style={{ color: isAccent ? 'var(--orange-deep)' : 'var(--accent)' }}
+            >
+              <Mandala size={520} opacity={isAccent ? 0.08 : 0.05} reverse={reversed} />
+            </div>
+
+            {/* Ritual number badge — large, faded */}
+            <div
+              className={`absolute ${reversed ? 'right-8 lg:right-16' : 'left-8 lg:left-16'} top-12 hero-display select-none pointer-events-none`}
+              style={{
+                fontSize: '11rem',
+                lineHeight: 1,
+                color: 'var(--fg)',
+                opacity: 0.04,
+                fontWeight: 300,
+              }}
+            >
+              0{i + 1}
+            </div>
+
             <motion.div
-              key={ritual.name}
               initial={{ opacity: 0, y: 40 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: '-80px' }}
               transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
-              className="peek grid lg:grid-cols-5 gap-12 lg:gap-20 items-start py-24 lg:py-32"
-              style={{ borderTop: '1px solid var(--border)' }}
-              tabIndex={0}
+              className="relative max-w-7xl mx-auto px-8 lg:px-16 grid lg:grid-cols-12 gap-10 lg:gap-16 items-center"
             >
-              <div className={`lg:col-span-3 ${i % 2 === 1 ? 'lg:order-2' : ''}`}>
-                <div className="relative overflow-hidden aspect-[4/3]">
+              {/* Image col */}
+              <div className={`lg:col-span-7 ${reversed ? 'lg:order-2' : ''}`}>
+                <div className="relative overflow-hidden aspect-[4/3] rounded-sm">
                   <motion.img
                     src={ritual.image}
                     alt={ritual.name}
                     className="w-full h-full object-cover"
-                    whileHover={{ scale: 1.05 }}
-                    transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+                    whileHover={{ scale: 1.04 }}
+                    transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
                   />
+                  {/* warm color-pop overlay */}
+                  <div
+                    className="absolute inset-0 mix-blend-overlay pointer-events-none"
+                    style={{ background: 'linear-gradient(135deg, rgba(220,140,60,0.18), transparent 60%)' }}
+                  />
+                  {/* floating mantra strip */}
+                  <div
+                    className="absolute bottom-4 left-4 right-4 px-4 py-2 backdrop-blur-md rounded-sm flex items-center justify-between"
+                    style={{ background: 'rgba(0,0,0,0.45)' }}
+                  >
+                    <span className="text-[10px] tracking-[0.35em] uppercase" style={{ color: 'rgba(250,200,100,0.75)' }}>
+                      Mantra
+                    </span>
+                    <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontWeight: 400, color: '#fafaf9', fontSize: '18px' }}>
+                      {ritual.mantra}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <div className={`lg:col-span-2 flex flex-col justify-center ${i % 2 === 1 ? 'lg:order-1' : ''}`}>
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="h-px w-8" style={{ background: 'rgba(200,130,50,0.6)' }} />
-                  <span className="text-[10px] tracking-[0.3em] uppercase" style={{ color: 'rgba(200,130,50,0.7)' }}>
-                    {ritual.time}
-                  </span>
+
+              {/* Text col */}
+              <div className={`lg:col-span-5 ${reversed ? 'lg:order-1' : ''}`}>
+                {/* Sanskrit + roman */}
+                <div className="flex items-center gap-4 mb-6">
+                  <OmGlyph size={36} color="var(--orange-deep)" />
+                  <div>
+                    <p
+                      className="text-2xl"
+                      style={{
+                        fontFamily: 'Cormorant Garamond, serif',
+                        fontStyle: 'italic',
+                        color: 'var(--orange-deep)',
+                        lineHeight: 1,
+                      }}
+                    >
+                      {ritual.sanskrit}
+                    </p>
+                    <p className="text-[10px] tracking-[0.3em] uppercase mt-2" style={{ color: 'var(--fg3)' }}>
+                      {ritual.time}
+                    </p>
+                  </div>
                 </div>
-                <h2 className="hero-display text-4xl lg:text-5xl" style={{ color: 'var(--fg)' }}>
+
+                <h2 className="hero-display text-5xl lg:text-6xl mb-8" style={{ color: 'var(--fg)' }}>
                   {ritual.name}
                 </h2>
-                <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--border)' }}>
+
+                <p className="text-[15px] font-light leading-relaxed mb-8" style={{ color: 'var(--fg2)' }}>
+                  {ritual.description}
+                </p>
+
+                {/* Divider with mantra emphasis */}
+                <div className="pt-8" style={{ borderTop: '1px solid var(--border2)' }}>
                   <p className="text-[10px] tracking-[0.3em] uppercase mb-3" style={{ color: 'var(--fg3)' }}>
                     Sacred Mantra
                   </p>
                   <p
-                    className="text-3xl"
-                    style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', color: 'rgba(220,150,80,0.9)' }}
+                    className="text-4xl lg:text-5xl"
+                    style={{
+                      fontFamily: 'Cormorant Garamond, serif',
+                      fontStyle: 'italic',
+                      color: 'var(--orange-deep)',
+                      letterSpacing: '-0.01em',
+                    }}
                   >
                     {ritual.mantra}
                   </p>
                 </div>
-
-                {/* Long description — hidden by default */}
-                <div className="peek-content">
-                  <p className="font-light leading-relaxed text-[15px]" style={{ color: 'var(--fg2)' }}>
-                    {ritual.description}
-                  </p>
-                </div>
-                <div className="peek-hint mt-6"><span className="dot" /> Hover for the practice</div>
               </div>
             </motion.div>
-          ))}
+          </section>
+        );
+      })}
+
+      {/* ═══ CLOSING — large kaleidoscope ═══ */}
+      <section
+        className="relative overflow-hidden py-32 lg:py-48 flex items-center justify-center"
+        style={{ borderTop: '1px solid var(--border)', background: 'var(--bg)' }}
+      >
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ color: 'var(--orange-deep)' }}>
+          <Mandala size={900} opacity={0.07} />
         </div>
-      </div>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ color: 'var(--accent)' }}>
+          <Mandala size={620} opacity={0.05} reverse />
+        </div>
+
+        <div className="relative text-center max-w-3xl px-8">
+          <OmGlyph size={84} color="var(--orange-deep)" opacity={0.8} />
+          <p className="mt-6 text-[10px] tracking-[0.45em] uppercase" style={{ color: 'var(--orange-deep)' }}>
+            ◊ Tat Tvam Asi
+          </p>
+          <h2
+            className="mt-6 text-4xl lg:text-6xl leading-tight"
+            style={{
+              fontFamily: 'Cormorant Garamond, serif',
+              fontStyle: 'italic',
+              fontWeight: 300,
+              color: 'var(--fg)',
+            }}
+          >
+            "Thou art that."
+          </h2>
+          <p className="mt-8 text-[14px] font-light leading-relaxed max-w-xl mx-auto" style={{ color: 'var(--fg2)' }}>
+            Each ritual is taught through guided ceremony — privately, with attention to your stage of practice.
+            Reach Vartika to begin.
+          </p>
+        </div>
+      </section>
 
       <Footer />
     </div>

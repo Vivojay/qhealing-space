@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, Calendar, CreditCard, Shield, Globe2, MessageCircle, ChevronDown, Sparkles, MapPin } from 'lucide-react';
+import { CheckCircle, Calendar, CreditCard, Shield, Globe2, MessageCircle, ChevronDown, Sparkles, MapPin, ArrowRight, Banknote, Send } from 'lucide-react';
 import Footer from '@/components/wellness/Footer';
 
 const SERVICES = [
@@ -68,49 +68,85 @@ function Field({ label, children }) {
 }
 
 /* ──────────────────────────────────────────
-   Google Pay branded button (trust signal)
+   Paytm branded button (trust signal)
+   Paytm brand colors: light blue #00BAF2, deep navy #002E6E
    ────────────────────────────────────────── */
-function GPayButton({ disabled, onClick }) {
+function PaytmButton({ onClick, label = 'Continue with' }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
       className="group relative w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl overflow-hidden transition-all"
       style={{
         background: '#fff',
-        border: '1px solid rgba(0,0,0,0.12)',
-        color: '#3c4043',
-        opacity: disabled ? 0.55 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        boxShadow: '0 1px 2px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05)',
+        border: '1px solid rgba(0,46,110,0.18)',
+        color: '#002E6E',
+        boxShadow: '0 1px 2px rgba(0,46,110,0.08), 0 2px 8px rgba(0,46,110,0.06)',
+        cursor: 'pointer',
       }}
     >
-      {/* Google G + "Pay" mark */}
-      <span className="text-sm font-medium tracking-tight inline-flex items-center gap-1.5">
-        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.56c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.56-2.77c-.99.66-2.25 1.06-3.72 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/>
-          <path fill="#FBBC05" d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.44.34-2.1V7.07H2.18A11 11 0 0 0 1 12c0 1.78.43 3.46 1.18 4.93l3.66-2.83z"/>
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.07l3.66 2.83C6.71 7.31 9.14 5.38 12 5.38z"/>
+      <span className="text-sm font-medium tracking-tight inline-flex items-center gap-2">
+        {/* Paytm-style logo: blue circle with white "P" */}
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="11" fill="#00BAF2"/>
+          <path
+            d="M9.2 6.8h3.5c1.85 0 3.3 1.45 3.3 3.3s-1.45 3.3-3.3 3.3h-1.7v3.8H9.2V6.8zm2 1.8v3.0h1.4c.83 0 1.5-.67 1.5-1.5s-.67-1.5-1.5-1.5h-1.4z"
+            fill="#fff"
+          />
         </svg>
-        <span style={{ color: '#5f6368' }}>Continue with</span>
-        <span style={{ fontWeight: 600, color: '#3c4043' }}>Pay</span>
+        <span style={{ color: '#5b6b85' }}>{label}</span>
+        <span style={{ fontWeight: 700, color: '#002E6E', letterSpacing: '-0.01em' }}>Paytm</span>
       </span>
       <span
         className="ml-auto text-[10px] tracking-[0.25em] uppercase"
-        style={{ color: '#80868b', fontFamily: "'JetBrains Mono', monospace" }}
+        style={{ color: '#7a8aa8', fontFamily: "'JetBrains Mono', monospace" }}
       >
-        UPI
+        UPI · Cards · Wallet
       </span>
     </button>
   );
 }
 
 /* ──────────────────────────────────────────
-   International disclaimer — expandable card
+   International payment rails — every option
+   ultimately settles into the same Indian
+   Paytm-linked bank account.
    ────────────────────────────────────────── */
-function InternationalNotice() {
+const INTL_RAILS = [
+  {
+    name: 'Wise',
+    tagline: 'Best rate · 50+ currencies',
+    detail: 'Send in your local currency to the Indian bank account below — funds Paytm directly.',
+    href: 'https://wise.com/send-money/send-money-to-india',
+    badge: 'Recommended',
+  },
+  {
+    name: 'PayPal',
+    tagline: 'Cards & PayPal balance',
+    detail: 'Pay vartikashukla2000@yahoo.com — withdrawn to the Indian Paytm-linked account.',
+    href: 'https://www.paypal.com/myaccount/transfer/homepage/pay',
+  },
+  {
+    name: 'Remitly',
+    tagline: 'Fast bank-to-bank transfer',
+    detail: 'Quick INR settlement to the same Indian account funding Paytm.',
+    href: 'https://www.remitly.com/us/en/india',
+  },
+  {
+    name: 'Western Union',
+    tagline: 'Global cash & bank pickup',
+    detail: 'Settles to the linked HDFC account — Paytm wallet is funded automatically.',
+    href: 'https://www.westernunion.com/in/en/send-money-to-india.html',
+  },
+  {
+    name: 'SWIFT Bank Transfer',
+    tagline: 'Direct international wire',
+    detail: 'HDFC · A/C 02931140001114 · IFSC HDFC0000293 · SWIFT HDFCINBB',
+    href: null,
+  },
+];
+
+function InternationalRails() {
   const [open, setOpen] = useState(false);
   return (
     <div
@@ -128,10 +164,10 @@ function InternationalNotice() {
         <Globe2 className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent)' }} strokeWidth={1.6} />
         <div className="flex-1">
           <p className="text-[11px] tracking-[0.25em] uppercase" style={{ color: 'var(--fg2)' }}>
-            Outside India?
+            Paying from outside India?
           </p>
           <p className="text-[12px] mt-1 font-light" style={{ color: 'var(--fg3)' }}>
-            Tap to read how to reach Vartika directly
+            5 international rails · all fund the same Paytm account
           </p>
         </div>
         <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.3 }}>
@@ -147,24 +183,68 @@ function InternationalNotice() {
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
             className="overflow-hidden"
           >
-            <div className="px-5 pb-5 pt-1 text-[13px] leading-relaxed font-light" style={{ color: 'var(--fg2)' }}>
-              <p className="mb-3">
-                Online UPI / Google Pay currently works for Indian bank accounts only. For all friends from outside India, please reach Vartika directly on WhatsApp — she will personally arrange a session, share fees in your local currency, and accept payment via{' '}
-                <span style={{ color: 'var(--fg)' }}>PayPal</span> or{' '}
-                <span style={{ color: 'var(--fg)' }}>international bank transfer</span>.
+            <div className="px-5 pb-5 pt-1" style={{ color: 'var(--fg2)' }}>
+              <p className="text-[12px] leading-relaxed font-light mb-5" style={{ color: 'var(--fg3)' }}>
+                Vartika receives all sessions through her Indian Paytm-linked bank account.
+                Pick any rail below — your payment lands in the same place.
               </p>
-              <a
-                href="https://wa.me/919819962635"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="expand-link inline-flex items-center gap-2"
-              >
-                <MessageCircle className="w-3.5 h-3.5" strokeWidth={2} />
-                Message Vartika on WhatsApp
-              </a>
-              <p className="mt-4 text-[11px] opacity-60">
-                +91 98199 62635 · responds within 24 hrs
-              </p>
+
+              <div className="space-y-2">
+                {INTL_RAILS.map((rail) => {
+                  const Inner = (
+                    <div
+                      className="group flex items-start gap-4 p-3.5 rounded-lg transition-all hover-surface"
+                      style={{ border: '1px solid var(--border)' }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[13px] font-medium" style={{ color: 'var(--fg)' }}>{rail.name}</span>
+                          {rail.badge && (
+                            <span
+                              className="text-[9px] tracking-[0.18em] uppercase px-1.5 py-0.5 rounded"
+                              style={{ background: 'var(--accent-soft)', color: 'var(--accent-text)' }}
+                            >
+                              {rail.badge}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10.5px] tracking-[0.18em] uppercase opacity-70 mb-1.5" style={{ color: 'var(--accent-text)' }}>
+                          {rail.tagline}
+                        </p>
+                        <p className="text-[12px] leading-relaxed font-light" style={{ color: 'var(--fg2)' }}>
+                          {rail.detail}
+                        </p>
+                      </div>
+                      {rail.href && (
+                        <ArrowRight
+                          className="w-4 h-4 flex-shrink-0 mt-1 transition-transform group-hover:translate-x-0.5"
+                          style={{ color: 'var(--accent)' }}
+                          strokeWidth={1.6}
+                        />
+                      )}
+                    </div>
+                  );
+                  return rail.href ? (
+                    <a key={rail.name} href={rail.href} target="_blank" rel="noopener noreferrer" className="block">
+                      {Inner}
+                    </a>
+                  ) : (
+                    <div key={rail.name}>{Inner}</div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-5 pt-5 flex items-center gap-3" style={{ borderTop: '1px solid var(--border)' }}>
+                <Send className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} strokeWidth={1.8} />
+                <a
+                  href="https://wa.me/919819962635"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="expand-link inline-flex items-center gap-2"
+                >
+                  Confirm with Vartika on WhatsApp
+                </a>
+              </div>
             </div>
           </motion.div>
         )}
@@ -401,22 +481,22 @@ export default function Booking() {
               </div>
             </div>
 
-            {/* Google Pay button — disabled if outside India */}
-            <GPayButton disabled={!isIndia} onClick={() => setShowQr(s => !s)} />
+            {/* Paytm — accepts UPI / Cards / Wallet for India, AND every international rail below ultimately funds the same Paytm account */}
+            <PaytmButton onClick={() => setShowQr(s => !s)} label={isIndia ? 'Continue with' : 'Pay India-side via'} />
             <p className="mt-3 text-[10px] tracking-[0.18em] uppercase text-center" style={{ color: 'var(--fg3)' }}>
-              Backed by Google Pay · Trusted by millions
+              Trusted by 350M+ Indians · Receives global rails
             </p>
 
-            {/* Disabled note for non-India */}
+            {/* Helper note for non-India */}
             {!isIndia && (
               <p className="mt-4 text-[12px] font-light leading-relaxed text-center" style={{ color: 'var(--fg3)' }}>
-                UPI is unavailable for clients outside India — see options below ↓
+                Outside India? Use any global rail below — they all settle into this same Paytm account ↓
               </p>
             )}
 
             {/* QR reveal */}
             <AnimatePresence initial={false}>
-              {showQr && isIndia && (
+              {showQr && (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
@@ -426,10 +506,10 @@ export default function Booking() {
                 >
                   <div className="mt-6 pt-6 flex flex-col items-center gap-3" style={{ borderTop: '1px solid var(--border)' }}>
                     <div className="p-4 rounded-lg" style={{ background: '#fff' }}>
-                      <img src={UPI_QR} alt="UPI QR — Vartika Shukla" className="w-44 h-44 block" />
+                      <img src={UPI_QR} alt="Paytm UPI QR — Vartika Shukla" className="w-44 h-44 block" />
                     </div>
                     <p className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg2)' }}>
-                      Scan with any UPI app
+                      Scan with Paytm / GPay / PhonePe
                     </p>
                     <p className="text-[10px] font-mono opacity-50" style={{ color: 'var(--fg3)' }}>
                       9819962635@paytm
@@ -440,8 +520,8 @@ export default function Booking() {
             </AnimatePresence>
           </div>
 
-          {/* International notice — expandable */}
-          <InternationalNotice />
+          {/* International payment rails — expandable, all fund the Paytm account */}
+          <InternationalRails />
 
           {/* Other payment options — collapsed by default */}
           <details
