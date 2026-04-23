@@ -49,67 +49,84 @@ const RETREATS = [
 ];
 
 function RetreatCard({ r, i }) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
   return (
     <motion.div
       initial={{ opacity: 0 }}
       whileInView={{ opacity: 1 }}
       viewport={{ once: true, margin: '-60px' }}
       transition={{ duration: 0.8 }}
-      className="relative overflow-hidden"
+      className={`peek relative overflow-hidden ${open ? 'is-open' : ''}`}
       style={{ borderBottom: '1px solid var(--border)' }}
+      tabIndex={0}
     >
       {/* Full-bleed image */}
-      <div className="relative h-[50vh] lg:h-[60vh] overflow-hidden">
+      <div className="relative h-[55vh] lg:h-[70vh] overflow-hidden">
         <motion.img
           src={r.image}
           alt={r.name}
           className="w-full h-full object-cover"
-          whileHover={{ scale: 1.03 }}
+          whileHover={{ scale: 1.04 }}
           transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
         />
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, var(--bg) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)' }} />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, var(--bg) 0%, rgba(0,0,0,0.25) 55%, transparent 100%)' }} />
 
         {/* Top label */}
-        <div className="absolute top-6 left-8 flex items-center gap-4">
-          <span className="text-[10px] font-mono text-white/40">{String(i + 1).padStart(2, '0')}</span>
-          <span className="text-[10px] tracking-[0.3em] uppercase text-white/40">{r.duration}</span>
+        <div className="absolute top-8 left-10 flex items-center gap-4">
+          <span className="text-[10px] font-mono text-white/50">{String(i + 1).padStart(2, '0')}</span>
+          <span className="text-[10px] tracking-[0.3em] uppercase text-white/50">{r.duration}</span>
+        </div>
+
+        {/* Headline overlaid on image */}
+        <div className="absolute bottom-10 left-10 right-10 lg:bottom-14 lg:left-16 lg:right-16">
+          <h2 className="hero-display text-5xl lg:text-7xl text-white max-w-3xl">
+            {r.name}
+          </h2>
         </div>
       </div>
 
       {/* Content */}
-      <div className="px-8 lg:px-16 py-12" style={{ background: 'var(--bg)' }}>
-        <div className="lg:grid lg:grid-cols-5 gap-12 lg:gap-16">
+      <div className="px-10 lg:px-16 py-16 lg:py-20" style={{ background: 'var(--bg)' }}>
+        <div className="lg:grid lg:grid-cols-5 gap-12 lg:gap-20">
+          {/* Bullets — always visible, short */}
           <div className="lg:col-span-3">
-            <h2
-              className="text-3xl lg:text-5xl mb-6 leading-tight"
-              style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300, color: 'var(--fg)' }}
-            >
-              {r.name}
-            </h2>
-            <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
-              {r.desc}
+            <p className="text-[10px] tracking-[0.4em] uppercase mb-8" style={{ color: 'var(--accent-text)' }}>
+              ◊ Includes
             </p>
-          </div>
-
-          <div className="lg:col-span-2 mt-8 lg:mt-0">
-            <p className="text-[10px] tracking-[0.3em] uppercase mb-6" style={{ color: 'var(--fg3)' }}>
-              Retreat Includes
-            </p>
-            <ul className="space-y-3">
+            <ul className="grid sm:grid-cols-2 gap-x-8 gap-y-4">
               {r.highlights.map((h) => (
                 <li key={h} className="flex items-center gap-3">
-                  <div className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'var(--fg3)' }} />
-                  <span className="text-sm font-light" style={{ color: 'var(--fg2)' }}>{h}</span>
+                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--accent)' }} />
+                  <span className="text-sm font-light" style={{ color: 'var(--fg)' }}>{h}</span>
                 </li>
               ))}
             </ul>
+
+            {/* Long description — hidden by default */}
+            <div className="peek-content">
+              <p className="text-[15px] font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                {r.desc}
+              </p>
+            </div>
+
+            <button
+              onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+              className="peek-hint mt-8"
+              type="button"
+            >
+              <span className="dot" />
+              {open ? 'Less' : 'About this retreat'}
+            </button>
+          </div>
+
+          <div className="lg:col-span-2 mt-12 lg:mt-0 flex flex-col justify-end">
             <Link
               to="/booking"
-              className="inline-block mt-8 text-xs tracking-widest uppercase pb-1 hover-accent"
-              style={{ color: 'var(--accent-text)', borderBottom: '1px solid var(--accent-soft)' }}
+              className="inline-flex items-center justify-between gap-4 px-8 py-5 hover-accent group"
+              style={{ background: 'var(--bg2)', border: '1px solid var(--border2)' }}
             >
-              Enquire →
+              <span className="text-xs tracking-[0.25em] uppercase" style={{ color: 'var(--fg)' }}>Enquire</span>
+              <span className="text-lg" style={{ color: 'var(--accent-text)' }}>→</span>
             </Link>
           </div>
         </div>

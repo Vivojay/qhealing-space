@@ -92,6 +92,7 @@ const HEALINGS = [
 
 function HealingRow({ h, i }) {
   const [hovered, setHovered] = useState(false);
+  const [open, setOpen] = useState(false);
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -100,52 +101,74 @@ function HealingRow({ h, i }) {
       transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="group grid lg:grid-cols-5 gap-0"
+      className={`peek group grid lg:grid-cols-5 gap-0 ${open ? 'is-open' : ''}`}
       style={{ borderBottom: '1px solid var(--border)' }}
+      tabIndex={0}
     >
       {/* Image */}
       <div className={`relative overflow-hidden lg:col-span-2 ${i % 2 === 1 ? 'lg:order-2' : ''}`}>
-        <div className="aspect-[4/3] lg:aspect-auto lg:h-full min-h-[200px]">
+        <div className="aspect-[4/3] lg:aspect-auto lg:h-full min-h-[260px]">
           <motion.img
             src={h.image}
             alt={h.name}
             className="w-full h-full object-cover"
-            animate={{ scale: hovered ? 1.04 : 1 }}
+            animate={{ scale: hovered || open ? 1.05 : 1 }}
             transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
           />
+          <div className="absolute inset-0 transition-colors duration-300" style={{ background: hovered || open ? 'rgba(0,0,0,0.0)' : 'rgba(0,0,0,0.2)' }} />
         </div>
       </div>
 
       {/* Content */}
       <div
-        className={`lg:col-span-3 flex flex-col justify-center px-8 lg:px-14 py-12 ${i % 2 === 1 ? 'lg:order-1' : ''}`}
+        className={`lg:col-span-3 flex flex-col justify-center px-10 lg:px-20 py-20 lg:py-24 ${i % 2 === 1 ? 'lg:order-1' : ''}`}
         style={{ background: 'var(--bg)' }}
       >
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-4 mb-8">
           <span className="text-[10px] font-mono" style={{ color: 'var(--fg3)' }}>
             {String(i + 1).padStart(2, '0')}
           </span>
           <div className="h-px flex-1" style={{ background: 'var(--border)' }} />
-          <span className="text-[10px] tracking-[0.3em] uppercase" style={{ color: 'var(--fg3)' }}>
+          <span className="text-[10px] tracking-[0.3em] uppercase" style={{ color: 'var(--accent-text)' }}>
             {h.tag}
           </span>
         </div>
         <h2
-          className="text-3xl lg:text-4xl mb-5 leading-tight"
-          style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300, color: 'var(--fg)' }}
+          className="hero-display text-4xl lg:text-6xl leading-[0.95]"
+          style={{ color: 'var(--fg)' }}
         >
           {h.name}
         </h2>
-        <p className="text-sm font-light leading-relaxed mb-8" style={{ color: 'var(--fg2)' }}>
-          {h.desc}
-        </p>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-px w-6" style={{ background: 'var(--border2)' }} />
-            <span className="text-[11px] tracking-widest uppercase" style={{ color: 'var(--fg3)' }}>
-              {h.duration}
-            </span>
-          </div>
+
+        {/* Bullets — short, always visible */}
+        <ul className="flex flex-wrap gap-x-6 gap-y-2 mt-6">
+          <li className="flex items-center gap-2 text-[11px] tracking-widest uppercase" style={{ color: 'var(--fg2)' }}>
+            <span className="w-1 h-1 rounded-full" style={{ background: 'var(--accent)' }} /> {h.duration}
+          </li>
+          <li className="flex items-center gap-2 text-[11px] tracking-widest uppercase" style={{ color: 'var(--fg2)' }}>
+            <span className="w-1 h-1 rounded-full" style={{ background: 'var(--accent)' }} /> 1-on-1
+          </li>
+          <li className="flex items-center gap-2 text-[11px] tracking-widest uppercase" style={{ color: 'var(--fg2)' }}>
+            <span className="w-1 h-1 rounded-full" style={{ background: 'var(--accent)' }} /> In-person · Online
+          </li>
+        </ul>
+
+        {/* Long description — only on hover/focus/click */}
+        <div className="peek-content">
+          <p className="text-[15px] font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
+            {h.desc}
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between mt-8">
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+            className="peek-hint"
+            type="button"
+          >
+            <span className="dot" />
+            {open ? 'Less' : 'Read more'}
+          </button>
           <Link
             to="/booking"
             className="text-xs tracking-widest uppercase pb-1 hover-accent inline-block"

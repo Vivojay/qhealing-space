@@ -128,6 +128,62 @@ html.lenis, html.lenis body { height: auto; }
 .mask-soft  { border-radius: 14px; }
 .mask-tall  { border-radius: 200px 200px 12px 12px; }
 
+/* ───────── Reveal-on-hover pattern ─────────
+   Long copy is hidden by default; appears on hover, focus
+   (keyboard tab), or when parent has .is-open (click toggle). */
+.peek { position: relative; outline: none; }
+.peek-content {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(10px);
+  transition:
+    max-height 0.5s cubic-bezier(0.22,1,0.36,1),
+    opacity 0.3s ease,
+    transform 0.5s cubic-bezier(0.22,1,0.36,1),
+    margin 0.5s cubic-bezier(0.22,1,0.36,1);
+  margin-top: 0;
+}
+.peek:hover .peek-content,
+.peek:focus-within .peek-content,
+.peek.is-open .peek-content {
+  max-height: 600px;
+  opacity: 1;
+  transform: translateY(0);
+  margin-top: 1.5rem;
+}
+.peek-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  opacity: 0.7;
+  transition: opacity 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+.peek:hover .peek-hint,
+.peek:focus-within .peek-hint,
+.peek.is-open .peek-hint {
+  opacity: 1;
+  transform: translateX(2px);
+}
+.peek-hint .dot {
+  width: 6px; height: 6px; border-radius: 999px;
+  background: var(--accent);
+  display: inline-block;
+  transition: transform 0.3s ease, background 0.2s ease;
+}
+.peek:hover .peek-hint .dot,
+.peek:focus-within .peek-hint .dot,
+.peek.is-open .peek-hint .dot {
+  transform: scale(1.6);
+  background: var(--accent-bright);
+}
+
 /* Subtle grain overlay class */
 .grain::after {
   content: "";

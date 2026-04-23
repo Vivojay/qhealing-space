@@ -71,7 +71,7 @@ export default function HinduRituals() {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-8 lg:px-16 py-24">
+      <div className="max-w-5xl mx-auto px-8 lg:px-16 py-28 lg:py-36">
         <div style={{ borderBottom: '1px solid var(--border)' }}>
           {rituals.map((ritual, i) => (
             <motion.div
@@ -80,8 +80,9 @@ export default function HinduRituals() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: '-80px' }}
               transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
-              className="grid lg:grid-cols-5 gap-12 lg:gap-16 items-start py-20"
+              className="peek grid lg:grid-cols-5 gap-12 lg:gap-20 items-start py-24 lg:py-32"
               style={{ borderTop: '1px solid var(--border)' }}
+              tabIndex={0}
             >
               <div className={`lg:col-span-3 ${i % 2 === 1 ? 'lg:order-2' : ''}`}>
                 <div className="relative overflow-hidden aspect-[4/3]">
@@ -89,38 +90,40 @@ export default function HinduRituals() {
                     src={ritual.image}
                     alt={ritual.name}
                     className="w-full h-full object-cover"
-                    whileHover={{ scale: 1.04 }}
+                    whileHover={{ scale: 1.05 }}
                     transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
                   />
                 </div>
               </div>
               <div className={`lg:col-span-2 flex flex-col justify-center ${i % 2 === 1 ? 'lg:order-1' : ''}`}>
-                <div className="flex items-center gap-4 mb-6">
+                <div className="flex items-center gap-4 mb-8">
                   <div className="h-px w-8" style={{ background: 'rgba(200,130,50,0.6)' }} />
-                  <span className="text-[10px] tracking-[0.3em] uppercase" style={{ color: 'rgba(200,130,50,0.6)' }}>
+                  <span className="text-[10px] tracking-[0.3em] uppercase" style={{ color: 'rgba(200,130,50,0.7)' }}>
                     {ritual.time}
                   </span>
                 </div>
-                <h2
-                  className="text-3xl mb-4 tracking-tight leading-tight"
-                  style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300, color: 'var(--fg)' }}
-                >
+                <h2 className="hero-display text-4xl lg:text-5xl" style={{ color: 'var(--fg)' }}>
                   {ritual.name}
                 </h2>
-                <p className="font-light leading-relaxed text-[15px] mb-8" style={{ color: 'var(--fg2)' }}>
-                  {ritual.description}
-                </p>
-                <div className="pt-6" style={{ borderTop: '1px solid var(--border)' }}>
+                <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--border)' }}>
                   <p className="text-[10px] tracking-[0.3em] uppercase mb-3" style={{ color: 'var(--fg3)' }}>
                     Sacred Mantra
                   </p>
                   <p
-                    className="text-2xl"
-                    style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', color: 'rgba(200,130,50,0.8)' }}
+                    className="text-3xl"
+                    style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', color: 'rgba(220,150,80,0.9)' }}
                   >
                     {ritual.mantra}
                   </p>
                 </div>
+
+                {/* Long description — hidden by default */}
+                <div className="peek-content">
+                  <p className="font-light leading-relaxed text-[15px]" style={{ color: 'var(--fg2)' }}>
+                    {ritual.description}
+                  </p>
+                </div>
+                <div className="peek-hint mt-6"><span className="dot" /> Hover for the practice</div>
               </div>
             </motion.div>
           ))}

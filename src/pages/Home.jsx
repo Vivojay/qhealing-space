@@ -241,28 +241,47 @@ export default function Home() {
             <em style={{ color: 'var(--fg2)' }}>equally receptive.</em>
           </motion.blockquote>
 
-          {/* Body text — clearly below quote, no overlap */}
+          {/* Bullets always visible · long copy revealed on hover */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.9, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
-            className="grid lg:grid-cols-2 gap-12"
-            style={{ paddingTop: '2rem', borderTop: '1px solid var(--border)' }}
+            className="peek pt-10"
+            style={{ borderTop: '1px solid var(--border)' }}
+            tabIndex={0}
           >
-            <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
-              Healing works best when approached with <span style={{ color: 'var(--accent-text)' }}>faith and openness</span>. Results vary, yet it is extremely rare for someone to receive healing and experience no improvement. Many feel profound shifts even where conventional treatments could not reach.
-            </p>
-            <div className="flex flex-col justify-between gap-6">
-              <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
-                Spiritual healing helps in multiple ways — related issues get resolved, better pathways appear, and the person becomes <span style={{ color: 'var(--accent-text)' }}>more positive and receptive</span> to life itself.
-              </p>
-              <div className="flex items-center gap-4">
-                <div className="h-px w-8" style={{ background: 'var(--border2)' }} />
-                <span className="text-[11px] tracking-[0.3em] uppercase" style={{ color: 'var(--fg3)' }}>
-                  — Vartika Shukla
-                </span>
+            <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-4">
+              {[
+                'Faith opens the channel',
+                'Improvement is the rule',
+                'Results compound with time',
+                'Receptivity deepens',
+                'Pathways realign',
+                'Beyond the conventional',
+              ].map((b) => (
+                <li key={b} className="flex items-center gap-3 text-sm" style={{ color: 'var(--fg)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }} />
+                  <span className="font-light">{b}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="peek-content">
+              <div className="grid lg:grid-cols-2 gap-12">
+                <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                  Healing works best when approached with <span style={{ color: 'var(--accent-text)' }}>faith and openness</span>. Results vary, yet it is extremely rare for someone to receive healing and experience no improvement.
+                </p>
+                <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                  Spiritual healing helps in multiple ways — related issues get resolved, better pathways appear, and the person becomes <span style={{ color: 'var(--accent-text)' }}>more positive and receptive</span> to life itself.
+                </p>
               </div>
+            </div>
+            <div className="flex items-center gap-6 mt-8">
+              <div className="peek-hint"><span className="dot" /> Read the philosophy</div>
+              <div className="h-px flex-1" style={{ background: 'var(--border)' }} />
+              <span className="text-[11px] tracking-[0.3em] uppercase" style={{ color: 'var(--fg3)' }}>
+                — Vartika Shukla
+              </span>
             </div>
           </motion.div>
         </div>
@@ -313,37 +332,37 @@ export default function Home() {
                 whileInView={{ opacity: 1 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.5, delay: i * 0.07 }}
-                className="p-8 lg:p-10 group cursor-pointer"
+                className="peek p-10 lg:p-14 group cursor-pointer min-h-[280px] flex flex-col justify-between"
                 style={{ background: SERVICE_BG[i], transition: 'background-color 0.2s ease, transform 0.2s ease' }}
                 whileHover={{ backgroundColor: 'var(--hover-bg-strong)', y: -4 }}
+                tabIndex={0}
               >
-                <span className="text-[10px] font-mono mb-5 block" style={{ color: i % 3 === 0 ? 'var(--accent)' : 'var(--fg3)' }}>
-                  {String(i + 1).padStart(2, '0')}
-                </span>
-                <h3
-                  className="text-2xl mb-4"
-                  style={{ fontFamily: "'Manrope', sans-serif", fontWeight: 500, letterSpacing: '-0.025em', color: 'var(--fg)' }}
-                >
-                  {s.name}
-                </h3>
-                <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
-                  {s.desc}
-                </p>
-                <motion.div
-                  className="mt-6 h-px origin-left"
-                  style={{ background: i % 2 === 0 ? 'var(--accent-soft)' : 'var(--border2)' }}
-                  initial={{ scaleX: 0 }}
-                  whileInView={{ scaleX: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.7, delay: 0.3 + i * 0.06 }}
-                />
-                <Link
-                  to="/booking"
-                  className="inline-block mt-5 text-[10px] tracking-widest uppercase hover:opacity-60 transition-opacity"
-                  style={{ color: 'var(--accent-text)' }}
-                >
-                  Book →
-                </Link>
+                <div>
+                  <span className="text-[10px] font-mono mb-6 block" style={{ color: i % 3 === 0 ? 'var(--accent)' : 'var(--fg3)' }}>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <h3
+                    className="hero-display text-3xl lg:text-4xl"
+                    style={{ color: 'var(--fg)' }}
+                  >
+                    {s.name}
+                  </h3>
+                  <div className="peek-content">
+                    <p className="text-[13px] font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                      {s.desc}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-8">
+                  <div className="peek-hint"><span className="dot" /> Read</div>
+                  <Link
+                    to="/booking"
+                    className="text-[10px] tracking-widest uppercase hover-accent inline-block"
+                    style={{ color: 'var(--accent-text)' }}
+                  >
+                    Book →
+                  </Link>
+                </div>
               </motion.div>
             ))}
           </div>
@@ -385,7 +404,7 @@ export default function Home() {
               className="lg:col-span-5 text-sm font-light leading-relaxed lg:pb-3"
               style={{ color: 'var(--fg2)' }}
             >
-              Ancient symbols, stillness, and presence — a discipline of <span style={{ color: 'var(--accent-text)' }}>becoming</span>. Every object, every breath, a practice repeated until it becomes the ground beneath your feet.
+              A discipline of <span style={{ color: 'var(--accent-text)' }}>becoming</span> — repeated until it becomes the ground beneath your feet.
             </motion.p>
           </div>
 

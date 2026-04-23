@@ -49,15 +49,15 @@ export default function GlobalPractices() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-8 lg:px-16 py-20">
+      <div className="max-w-7xl mx-auto px-8 lg:px-16 py-28 lg:py-36">
         <motion.p
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          className="text-[10px] tracking-[0.45em] uppercase mb-12"
-          style={{ color: 'var(--fg3)' }}
+          className="text-[10px] tracking-[0.45em] uppercase mb-16"
+          style={{ color: 'var(--accent-text)' }}
         >
-          Healing wisdom from every corner of the earth
+          ◊ Healing wisdom from every corner of the earth
         </motion.p>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px" style={{ background: 'var(--border)' }}>
@@ -68,32 +68,37 @@ export default function GlobalPractices() {
               whileInView={{ opacity: 1 }}
               viewport={{ once: true }}
               transition={{ duration: 0.7, delay: i * 0.08 }}
-              className="group overflow-hidden"
+              className="peek group overflow-hidden cursor-pointer"
               style={{ background: 'var(--bg)' }}
-              whileHover={{ backgroundColor: 'var(--bg2)' }}
+              whileHover={{ backgroundColor: 'var(--hover-bg)' }}
+              tabIndex={0}
             >
-              <div className="aspect-[4/3] overflow-hidden">
+              <div className="aspect-[4/3] overflow-hidden relative">
                 <motion.img
                   src={p.image}
                   alt={p.title}
                   className="w-full h-full object-cover"
-                  whileHover={{ scale: 1.06 }}
+                  whileHover={{ scale: 1.08 }}
                   transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
                 />
+                <div
+                  className="absolute inset-0 transition-opacity duration-300 group-hover:opacity-0"
+                  style={{ background: 'linear-gradient(to top, var(--bg) 0%, transparent 60%)' }}
+                />
               </div>
-              <div className="p-8">
-                <p className="text-[10px] tracking-[0.3em] uppercase mb-4" style={{ color: 'var(--fg3)' }}>
+              <div className="p-10 lg:p-12">
+                <p className="text-[10px] tracking-[0.3em] uppercase mb-5" style={{ color: 'var(--accent-text)' }}>
                   {p.region}
                 </p>
-                <h3
-                  className="text-xl mb-3"
-                  style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 400, color: 'var(--fg)' }}
-                >
+                <h3 className="hero-display text-3xl lg:text-4xl" style={{ color: 'var(--fg)' }}>
                   {p.title}
                 </h3>
-                <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
-                  {p.desc}
-                </p>
+                <div className="peek-content">
+                  <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                    {p.desc}
+                  </p>
+                </div>
+                <div className="peek-hint mt-6"><span className="dot" /> Discover</div>
               </div>
             </motion.div>
           ))}
