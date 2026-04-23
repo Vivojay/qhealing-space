@@ -29,7 +29,7 @@ const FAQ = [
   },
   {
     patterns: ['price', 'cost', 'charge', 'fee', 'how much', 'rate'],
-    reply: "Consultation: ₹1,000 for Indian nationals · USD 3 for others\nIn-person booking deposit: ₹500 · USD 3 (adjusted in final payment)\nDistance sessions require full payment 24 hrs in advance."
+    reply: "Consultation: ₹2,500 (India) · $50 USD (outside India) — fixed upfront.\nTreatment (India): ₹5,000 first hour + ₹3,000 per additional hour.\nTreatment (International): $110 USD first hour + $70 USD per additional hour.\nDistance sessions require full payment 24 hrs in advance."
   },
   {
     patterns: ['book', 'appointment', 'schedule', 'session', 'register'],

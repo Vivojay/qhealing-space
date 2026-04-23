@@ -5,10 +5,12 @@ import { AnimatePresence, motion } from 'framer-motion'
 import Lenis from 'lenis'
 import { ThemeProvider } from '@/context/ThemeContext'
 import Layout from '@/Layout'
+import ScrollToTop from '@/components/ScrollToTop'
 import Home from '@/pages/Home'
 import Healings from '@/pages/Healings'
 import GlobalPractices from '@/pages/GlobalPractices'
 import Retreats from '@/pages/Retreats'
+import RetreatCheckout from '@/pages/RetreatCheckout'
 import HinduRituals from '@/pages/HinduRituals'
 import TranscendenceRituals from '@/pages/TranscendenceRituals'
 import Booking from '@/pages/Booking'
@@ -19,6 +21,7 @@ const lenis = new Lenis({
   wheelMultiplier: 0.8,
   touchMultiplier: 1.5,
 })
+if (typeof window !== 'undefined') window.__lenis = lenis
 
 function raf(time) {
   lenis.raf(time)
@@ -42,6 +45,7 @@ function AppRoutes() {
           <Route path="/healings" element={<Healings />} />
           <Route path="/global-practices" element={<GlobalPractices />} />
           <Route path="/retreats" element={<Retreats />} />
+          <Route path="/retreats/:slug/book" element={<RetreatCheckout />} />
           <Route path="/hindu-rituals" element={<HinduRituals />} />
           <Route path="/transcendence-rituals" element={<TranscendenceRituals />} />
           <Route path="/booking" element={<Booking />} />
@@ -55,6 +59,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ThemeProvider>
       <BrowserRouter>
+        <ScrollToTop />
         <Layout>
           <AppRoutes />
         </Layout>

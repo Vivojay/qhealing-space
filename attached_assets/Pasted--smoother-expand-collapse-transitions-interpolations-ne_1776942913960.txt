@@ -1,0 +1,14 @@
+- smoother expand/collapse transitions (interpolations need to be better and maybe animation speed needs to be 121ms slower)
+- instead of bullets, lean more towards visual items like rectangles or hoverable strips, etc..
+- Use official logos for partners and recognized official brand logos (e.g. paytm)
+- ensure that the dropdown menu shows more height-spaced items (height per line-item must be greater/roomier)
+- The 'Transcendence Ritual' tab/page text in lightmode is too light to contrast well with bg color, try darker and something similar to homepage
+- also, switching to other tabs must autoscrol to top of the corresponding page (so that we dont mistakenly scroll to the footer of that page!)
+- Can you add the elements, contemporary aspects, animations, boxes, etc... in ALL pages like you did solely for 'Hindu Rituals' page?
+- The banner for 'India only·Fixed upfront consultation fee ₹2,000·Working on supporting clients outside India too' uptop should ONLY be visible on the payment/booking/checkout pages
+- Replace the value of 2000 to now actually be 2500 for indian clients and 50 USD for clients outside india.
+- Similarly, Treatment prices: First hour = 5000, plus 3000 for all subsequent hrs. International Treatment price: First hour = 110 USD, for all subsequent hrs = plus 70 USD
+- Retreats page needs to look better, more like a proper makemytrip sort of page BUT wayy simpler and abstracted away. Still its currently missing good UI and elements. The enquire button must be replaced by "Book" and lead to a slightly altered dedicated checkout page for THAT specific retreat. This will show a gallery of square 1:1 cropped images of the retreat's location/venue/people's images/gallery/album subset which keep scrolling pretty slowly like a marquee and hovering over any one image stops the marquee and zooms into the image. 
+- In smaller screens, I can see the darklight toggle button TWICE, once on the topbar and once as a separate dedicated circle. Please ONLY keep the dedictated circle button, also in smaller screens i cannot see the side navbar
+- Take inspo from the design ideas in the attached images for awarded model websites
+

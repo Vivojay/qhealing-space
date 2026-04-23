@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, Calendar, CreditCard, Shield, Globe2, MessageCircle, ChevronDown, Sparkles, MapPin, ArrowRight, Banknote, Send } from 'lucide-react';
 import Footer from '@/components/wellness/Footer';
+import { PRICING } from '@/constants/pricing';
+import { PaytmLogo, WiseLogo, PayPalLogo, RemitlyLogo, WesternUnionLogo, SwiftLogo } from '@/components/BrandLogos';
+
+const SMOOTH = { duration: 0.6, ease: [0.16, 1, 0.3, 1] };
+const SMOOTH_SLOW = { duration: 0.65, ease: [0.16, 1, 0.3, 1] };
 
 const SERVICES = [
   'Reiki Healing',
@@ -86,14 +91,7 @@ function PaytmButton({ onClick, label = 'Continue with' }) {
       }}
     >
       <span className="text-sm font-medium tracking-tight inline-flex items-center gap-2">
-        {/* Paytm-style logo: blue circle with white "P" */}
-        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="12" r="11" fill="#00BAF2"/>
-          <path
-            d="M9.2 6.8h3.5c1.85 0 3.3 1.45 3.3 3.3s-1.45 3.3-3.3 3.3h-1.7v3.8H9.2V6.8zm2 1.8v3.0h1.4c.83 0 1.5-.67 1.5-1.5s-.67-1.5-1.5-1.5h-1.4z"
-            fill="#fff"
-          />
-        </svg>
+        <PaytmLogo size={22} />
         <span style={{ color: '#5b6b85' }}>{label}</span>
         <span style={{ fontWeight: 700, color: '#002E6E', letterSpacing: '-0.01em' }}>Paytm</span>
       </span>
@@ -106,6 +104,15 @@ function PaytmButton({ onClick, label = 'Continue with' }) {
     </button>
   );
 }
+
+const PaymentLogo = ({ name }) => {
+  const map = {
+    'Wise': WiseLogo, 'PayPal': PayPalLogo, 'Remitly': RemitlyLogo,
+    'Western Union': WesternUnionLogo, 'SWIFT Bank Transfer': SwiftLogo,
+  };
+  const C = map[name];
+  return C ? <C size={28} /> : null;
+};
 
 /* ──────────────────────────────────────────
    International payment rails — every option
@@ -180,7 +187,7 @@ function InternationalRails() {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
             className="overflow-hidden"
           >
             <div className="px-5 pb-5 pt-1" style={{ color: 'var(--fg2)' }}>
@@ -196,6 +203,7 @@ function InternationalRails() {
                       className="group flex items-start gap-4 p-3.5 rounded-lg transition-all hover-surface"
                       style={{ border: '1px solid var(--border)' }}
                     >
+                      <div className="flex-shrink-0 mt-0.5"><PaymentLogo name={rail.name} /></div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-[13px] font-medium" style={{ color: 'var(--fg)' }}>{rail.name}</span>
@@ -453,21 +461,48 @@ export default function Booking() {
         {/* ── Info + Payment side panel ── */}
         <div className="lg:col-span-2 space-y-8">
 
-          {/* Fee card with bg image */}
-          <div className="relative overflow-hidden rounded-xl p-8" style={{ background: 'var(--bg-accent-section)', border: '1px solid var(--accent-soft)' }}>
+          {/* Consultation fee card — both regions */}
+          <div className="relative overflow-hidden rounded-xl p-7" style={{ background: 'var(--bg-accent-section)', border: '1px solid var(--accent-soft)' }}>
             <div className="absolute -top-10 -right-10 w-48 h-48 opacity-10 pointer-events-none">
               <img src="https://images.unsplash.com/photo-1557672172-298e090bd0f1?w=600&q=80" alt="" className="w-full h-full object-cover rounded-full" />
             </div>
             <p className="text-[10px] tracking-[0.3em] uppercase mb-5" style={{ color: 'var(--accent-text)' }}>
               ◊ Consultation Fee
             </p>
-            <div className="flex items-baseline gap-2 mb-2">
-              <span className="hero-display text-5xl" style={{ color: 'var(--fg)' }}>₹2,000</span>
-              <span className="text-xs tracking-[0.25em] uppercase" style={{ color: 'var(--fg2)' }}>fixed · upfront</span>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="p-3 rounded-lg" style={{ background: 'var(--bg2)', border: isIndia ? '1px solid var(--accent)' : '1px solid var(--border)' }}>
+                <p className="text-[9px] tracking-[0.25em] uppercase mb-1" style={{ color: 'var(--fg3)' }}>India</p>
+                <p className="hero-display text-2xl" style={{ color: 'var(--fg)' }}>{PRICING.consultation.india.label}</p>
+              </div>
+              <div className="p-3 rounded-lg" style={{ background: 'var(--bg2)', border: !isIndia ? '1px solid var(--accent)' : '1px solid var(--border)' }}>
+                <p className="text-[9px] tracking-[0.25em] uppercase mb-1" style={{ color: 'var(--fg3)' }}>Outside India</p>
+                <p className="hero-display text-2xl" style={{ color: 'var(--fg)' }}>{PRICING.consultation.international.label}</p>
+              </div>
             </div>
-            <p className="text-[12px] mt-3 font-light" style={{ color: 'var(--fg2)' }}>
-              For Indian clients, paid via UPI / Google Pay before the session is scheduled.
-            </p>
+            <p className="text-[11px] font-light" style={{ color: 'var(--fg2)' }}>Fixed upfront · paid before the session is scheduled.</p>
+          </div>
+
+          {/* Treatment pricing card */}
+          <div className="rounded-xl p-7" style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)' }}>
+            <p className="text-[10px] tracking-[0.3em] uppercase mb-5" style={{ color: 'var(--fg3)' }}>◊ Treatment Pricing</p>
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
+                <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg2)' }}>India · 1st hour</span>
+                <span className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{PRICING.treatment.india.firstHour.label}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
+                <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg2)' }}>India · each additional hr</span>
+                <span className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{PRICING.treatment.india.subsequentHourly.label}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
+                <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg2)' }}>International · 1st hour</span>
+                <span className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{PRICING.treatment.international.firstHour.label}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
+                <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg2)' }}>International · each additional hr</span>
+                <span className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{PRICING.treatment.international.subsequentHourly.label}</span>
+              </div>
+            </div>
           </div>
 
           {/* Payment block */}
@@ -501,7 +536,7 @@ export default function Booking() {
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                  transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
                   className="overflow-hidden"
                 >
                   <div className="mt-6 pt-6 flex flex-col items-center gap-3" style={{ borderTop: '1px solid var(--border)' }}>
