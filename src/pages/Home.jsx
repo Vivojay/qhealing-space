@@ -96,13 +96,13 @@ export default function Home() {
               height: '100%',
               writingMode: 'vertical-rl',
               textOrientation: 'mixed',
-              fontSize: 'clamp(3rem, 13.5vh, 22rem)',
-              fontFamily: 'Space Grotesk, sans-serif',
-              fontWeight: 300,
-              letterSpacing: '-0.02em',
-              lineHeight: 1,
-              color: 'rgba(250,250,249,0.065)',
-              WebkitTextStroke: '1.5px rgba(250,250,249,0.11)',
+              fontSize: 'clamp(3rem, 14vh, 22rem)',
+              fontFamily: "'Inter Tight', 'Manrope', sans-serif",
+              fontWeight: 500,
+              letterSpacing: '-0.055em',
+              lineHeight: 0.92,
+              color: 'var(--accent-text)',
+              opacity: 0.14,
             }}
           >
             QUANTUM HEALING SPACE
@@ -287,11 +287,11 @@ export default function Home() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.9 }}
-                className="text-4xl lg:text-5xl"
-                style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300, color: 'var(--fg)' }}
+                className="text-5xl lg:text-7xl hero-display"
+                style={{ color: 'var(--fg)' }}
               >
-                20+ Pathways
-                <br /><em style={{ color: 'var(--accent-text)', fontStyle: 'italic' }}>to Wholeness</em>
+                20+ Pathways<br />
+                <span style={{ color: 'var(--accent-text)', fontWeight: 300, fontStyle: 'italic', fontFamily: 'Cormorant Garamond, serif', letterSpacing: '-0.02em' }}>to wholeness</span>
               </motion.h2>
             </div>
             <motion.div initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ delay: 0.3 }}>
@@ -312,17 +312,17 @@ export default function Home() {
                 initial={{ opacity: 0 }}
                 whileInView={{ opacity: 1 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.6, delay: i * 0.07 }}
-                className="p-8 lg:p-10 group transition-colors duration-500"
-                style={{ background: SERVICE_BG[i] }}
-                whileHover={{ backgroundColor: 'var(--accent-soft)' }}
+                transition={{ duration: 0.5, delay: i * 0.07 }}
+                className="p-8 lg:p-10 group cursor-pointer"
+                style={{ background: SERVICE_BG[i], transition: 'background-color 0.2s ease, transform 0.2s ease' }}
+                whileHover={{ backgroundColor: 'var(--hover-bg-strong)', y: -4 }}
               >
                 <span className="text-[10px] font-mono mb-5 block" style={{ color: i % 3 === 0 ? 'var(--accent)' : 'var(--fg3)' }}>
                   {String(i + 1).padStart(2, '0')}
                 </span>
                 <h3
-                  className="text-xl mb-4"
-                  style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 400, color: 'var(--fg)' }}
+                  className="text-2xl mb-4"
+                  style={{ fontFamily: "'Manrope', sans-serif", fontWeight: 500, letterSpacing: '-0.025em', color: 'var(--fg)' }}
                 >
                   {s.name}
                 </h3>
@@ -360,6 +360,150 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ═══ MOOD GALLERY — varied images, masks, sizes ═══ */}
+      <section className="relative py-24 lg:py-36 overflow-hidden" style={{ background: 'var(--bg-elev)', borderTop: '1px solid var(--border)' }}>
+        <div className="max-w-7xl mx-auto px-8 lg:px-16">
+          <div className="grid lg:grid-cols-12 gap-6 mb-16 items-end">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="lg:col-span-7"
+            >
+              <p className="text-[10px] tracking-[0.45em] uppercase mb-5" style={{ color: 'var(--accent-text)' }}>◊ The Practice</p>
+              <h2 className="hero-display text-5xl lg:text-7xl" style={{ color: 'var(--fg)' }}>
+                Sacred space,<br />
+                <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontWeight: 300, letterSpacing: '-0.02em', color: 'var(--accent-text)' }}>everyday ritual.</span>
+              </h2>
+            </motion.div>
+            <motion.p
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8, delay: 0.15 }}
+              className="lg:col-span-5 text-sm font-light leading-relaxed lg:pb-3"
+              style={{ color: 'var(--fg2)' }}
+            >
+              Ancient symbols, stillness, and presence — a discipline of <span style={{ color: 'var(--accent-text)' }}>becoming</span>. Every object, every breath, a practice repeated until it becomes the ground beneath your feet.
+            </motion.p>
+          </div>
+
+          <div className="grid grid-cols-12 gap-3 lg:gap-4">
+            {/* Tall portrait — left */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.9, ease: [0.22,1,0.36,1] }}
+              className="col-span-6 lg:col-span-3 row-span-2 mask-tall overflow-hidden hover-lift"
+              style={{ aspectRatio: '3/5' }}
+            >
+              <img src="https://images.unsplash.com/photo-1545389336-cf090694435e?w=900&q=85" alt="" className="w-full h-full object-cover" />
+            </motion.div>
+
+            {/* Wide top */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.9, delay: 0.08, ease: [0.22,1,0.36,1] }}
+              className="col-span-6 lg:col-span-6 mask-soft overflow-hidden hover-lift"
+              style={{ aspectRatio: '16/9' }}
+            >
+              <img src="https://images.unsplash.com/photo-1528319725582-ddc096101511?w=1400&q=85" alt="" className="w-full h-full object-cover" />
+            </motion.div>
+
+            {/* Circular mask — accent tinted */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.85 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.9, delay: 0.16, ease: [0.22,1,0.36,1] }}
+              className="col-span-6 lg:col-span-3 mask-pill overflow-hidden hover-lift relative"
+              style={{ aspectRatio: '1/1' }}
+            >
+              <img src="https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=800&q=85" alt="" className="w-full h-full object-cover" />
+              <div className="absolute inset-0" style={{ background: 'var(--accent-soft)', mixBlendMode: 'multiply' }} />
+            </motion.div>
+
+            {/* Caption strip */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+              className="col-span-6 lg:col-span-3 flex flex-col justify-between p-6"
+              style={{ background: 'var(--bg2)', borderRadius: '14px' }}
+            >
+              <p className="text-[10px] tracking-[0.4em] uppercase" style={{ color: 'var(--fg3)' }}>003 / Practice</p>
+              <div>
+                <p className="hero-display text-3xl mb-3" style={{ color: 'var(--fg)' }}>20+</p>
+                <p className="text-xs font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>healing modalities, drawn from traditions across continents.</p>
+              </div>
+            </motion.div>
+
+            {/* Wide image bottom-right */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.9, delay: 0.24, ease: [0.22,1,0.36,1] }}
+              className="col-span-12 lg:col-span-6 mask-soft overflow-hidden hover-lift"
+              style={{ aspectRatio: '16/9' }}
+            >
+              <img src="https://images.unsplash.com/photo-1593811167562-9cef47bfc4d7?w=1400&q=85" alt="" className="w-full h-full object-cover" />
+            </motion.div>
+
+            {/* Arch mask */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.9, delay: 0.32, ease: [0.22,1,0.36,1] }}
+              className="col-span-6 lg:col-span-3 mask-arch overflow-hidden hover-lift"
+              style={{ aspectRatio: '3/4' }}
+            >
+              <img src="https://images.unsplash.com/photo-1604881991720-f91add269bed?w=900&q=85" alt="" className="w-full h-full object-cover" />
+            </motion.div>
+
+            {/* Blob mask */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.9, delay: 0.4, ease: [0.22,1,0.36,1] }}
+              className="col-span-6 lg:col-span-3 mask-blob overflow-hidden hover-lift"
+              style={{ aspectRatio: '1/1' }}
+            >
+              <img src="https://images.unsplash.com/photo-1499209974431-9dddcece7f88?w=800&q=85" alt="" className="w-full h-full object-cover" />
+            </motion.div>
+          </div>
+
+          {/* Marquee-style stat row */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.9, delay: 0.2 }}
+            className="grid grid-cols-2 lg:grid-cols-4 gap-px mt-12"
+            style={{ background: 'var(--border)' }}
+          >
+            {[
+              ['12+', 'Years of Practice'],
+              ['2K+', 'Sessions Held'],
+              ['20+', 'Modalities'],
+              ['∞', 'Possibilities'],
+            ].map(([num, label]) => (
+              <div key={label} className="p-8 hover-surface" style={{ background: 'var(--bg-elev)' }}>
+                <p className="hero-display text-5xl lg:text-6xl mb-2" style={{ color: 'var(--accent-text)' }}>{num}</p>
+                <p className="text-[10px] tracking-[0.3em] uppercase" style={{ color: 'var(--fg3)' }}>{label}</p>
+              </div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
       {/* ═══ TESTIMONIALS ═══ */}
       <section className="py-24 lg:py-36" style={{ borderTop: '1px solid var(--border)' }}>
         <div className="max-w-7xl mx-auto px-8 lg:px-16">
@@ -371,8 +515,8 @@ export default function Home() {
             className="mb-16"
           >
             <p className="text-[10px] tracking-[0.45em] uppercase mb-4" style={{ color: 'var(--fg3)' }}>Voices</p>
-            <h2 className="text-4xl lg:text-5xl" style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300, color: 'var(--fg)' }}>
-              Transformed Lives
+            <h2 className="text-5xl lg:text-7xl hero-display" style={{ color: 'var(--fg)' }}>
+              Transformed <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontWeight: 300, letterSpacing: '-0.02em', color: 'var(--accent-text)' }}>lives.</span>
             </h2>
           </motion.div>
 
@@ -423,11 +567,11 @@ export default function Home() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.9 }}
-              className="text-4xl lg:text-5xl font-light leading-tight max-w-lg"
-              style={{ fontFamily: 'Cormorant Garamond, serif', color: 'var(--fg)' }}
+              className="text-5xl lg:text-7xl hero-display max-w-2xl"
+              style={{ color: 'var(--fg)' }}
             >
               Ready to go deeper
-              <br /><em style={{ color: 'var(--accent-text)' }}>into yourself?</em>
+              <br /><span style={{ color: 'var(--accent-text)', fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontWeight: 300, letterSpacing: '-0.02em' }}>into yourself?</span>
             </motion.h2>
           </div>
           <motion.div

@@ -146,15 +146,13 @@ function HealingRow({ h, i }) {
               {h.duration}
             </span>
           </div>
-          <motion.a
-            href="mailto:vartikashukla@xyz.com"
-            whileHover={{ x: 4 }}
-            transition={{ duration: 0.25 }}
-            className="text-xs tracking-widest uppercase pb-1 hover:opacity-60 transition-opacity"
-            style={{ color: 'var(--fg2)', borderBottom: '1px solid var(--border2)' }}
+          <Link
+            to="/booking"
+            className="text-xs tracking-widest uppercase pb-1 hover-accent inline-block"
+            style={{ color: 'var(--accent-text)', borderBottom: '1px solid var(--accent-soft)' }}
           >
             Book →
-          </motion.a>
+          </Link>
         </div>
       </div>
     </motion.div>
@@ -213,13 +211,13 @@ export default function Healings() {
         <p className="text-xs" style={{ color: 'var(--fg3)' }}>
           Including: Color Therapy · Switch Words · Dowsing · Cellular Memory Release · Meridian Clearing · Womb Healing · Zibu Symbols · Tarot · Automatic Writing · and more.
         </p>
-        <a
-          href="mailto:vartikashukla@xyz.com"
-          className="inline-block mt-8 text-xs tracking-widest uppercase pb-1 hover:opacity-60 transition-opacity"
-          style={{ color: 'var(--fg2)', borderBottom: '1px solid var(--border2)' }}
+        <Link
+          to="/booking"
+          className="inline-block mt-8 text-xs tracking-widest uppercase pb-1 hover-accent"
+          style={{ color: 'var(--accent-text)', borderBottom: '1px solid var(--accent-soft)' }}
         >
           Enquire for personalised guidance →
-        </a>
+        </Link>
       </div>
 
       <Footer />

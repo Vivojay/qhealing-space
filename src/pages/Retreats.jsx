@@ -104,14 +104,13 @@ function RetreatCard({ r, i }) {
                 </li>
               ))}
             </ul>
-            <motion.a
-              href="mailto:vartikashukla@xyz.com"
-              whileHover={{ x: 4 }}
-              className="inline-block mt-8 text-xs tracking-widest uppercase pb-1 hover:opacity-60 transition-opacity"
-              style={{ color: 'var(--fg2)', borderBottom: '1px solid var(--border2)' }}
+            <Link
+              to="/booking"
+              className="inline-block mt-8 text-xs tracking-widest uppercase pb-1 hover-accent"
+              style={{ color: 'var(--accent-text)', borderBottom: '1px solid var(--accent-soft)' }}
             >
               Enquire →
-            </motion.a>
+            </Link>
           </div>
         </div>
       </div>

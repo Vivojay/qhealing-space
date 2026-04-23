@@ -66,13 +66,13 @@ export default function Layout({ children }) {
             const href = createPageUrl(item.page);
             const active = location.pathname === href;
             return (
-              <Link key={item.page} to={href} className="group relative flex items-center gap-4 px-2 py-3 rounded">
+              <Link key={item.page} to={href} className="group relative flex items-center gap-4 px-2 py-3 rounded hover-surface">
                 {active && (
                   <motion.div
                     layoutId="active-pill"
                     className="absolute inset-0 rounded"
-                    style={{ background: 'var(--border)' }}
-                    transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                    style={{ background: 'var(--accent-soft)', borderLeft: '2px solid var(--accent)' }}
+                    transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
                   />
                 )}
                 <span
@@ -128,7 +128,7 @@ export default function Layout({ children }) {
           <span className="text-xs tracking-[0.18em] uppercase" style={{ color: 'var(--fg2)' }}>QHS</span>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={toggleTheme} className="w-8 h-8 flex items-center justify-center rounded-full transition-opacity hover:opacity-60">
+          <button onClick={toggleTheme} className="w-8 h-8 flex items-center justify-center rounded-full hover-accent" style={{ border: '1px solid var(--border2)' }}>
             {isDark
               ? <Sun className="w-4 h-4" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />
               : <Moon className="w-4 h-4" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />}
