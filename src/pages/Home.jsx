@@ -288,8 +288,13 @@ export default function Home() {
       </section>
 
       {/* ═══ SERVICES PREVIEW ═══ */}
-      <section className="py-24 lg:py-36" style={{ borderTop: '1px solid var(--border)' }}>
-        <div className="max-w-7xl mx-auto px-8 lg:px-16">
+      <section className="section-accent py-28 lg:py-40 relative overflow-hidden" style={{ borderTop: '1px solid var(--border)' }}>
+        {/* decorative bg image */}
+        <div className="absolute inset-0 opacity-[0.06] pointer-events-none">
+          <img src="https://images.unsplash.com/photo-1620121684840-edffcfc4b878?w=1800&q=80" alt="" className="w-full h-full object-cover" />
+        </div>
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 80% 20%, var(--accent-dim), transparent 60%)' }} />
+        <div className="relative max-w-7xl mx-auto px-8 lg:px-16">
           <div className="flex items-end justify-between mb-16">
             <div>
               <motion.p
@@ -297,9 +302,9 @@ export default function Home() {
                 whileInView={{ opacity: 1 }}
                 viewport={{ once: true }}
                 className="text-[10px] tracking-[0.45em] uppercase mb-4"
-                style={{ color: 'var(--fg3)' }}
+                style={{ color: 'var(--accent-text)' }}
               >
-                Healing Modalities
+                ◊ Healing Modalities
               </motion.p>
               <motion.h2
                 initial={{ opacity: 0, y: 20 }}
@@ -524,7 +529,10 @@ export default function Home() {
       </section>
 
       {/* ═══ TESTIMONIALS ═══ */}
-      <section className="py-24 lg:py-36" style={{ borderTop: '1px solid var(--border)' }}>
+      <section className="section-accent section-accent-2 py-28 lg:py-40 relative overflow-hidden" style={{ borderTop: '1px solid var(--border)' }}>
+        <div className="absolute inset-0 opacity-[0.05] pointer-events-none">
+          <img src="https://images.unsplash.com/photo-1604079628040-94301bb21b91?w=1800&q=80" alt="" className="w-full h-full object-cover" />
+        </div>
         <div className="max-w-7xl mx-auto px-8 lg:px-16">
           <motion.div
             initial={{ opacity: 0, y: 20 }}

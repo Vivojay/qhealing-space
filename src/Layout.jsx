@@ -1,10 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Leaf, Sun, Moon } from 'lucide-react';
+import { Menu, X, Leaf, Sun, Moon, Globe } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import ChatBot from '@/components/ChatBot';
+
+function TopBanner() {
+  const [hidden, setHidden] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return sessionStorage.getItem('qhs-banner-dismissed') === '1';
+  });
+  if (hidden) return null;
+  return (
+    <div className="top-banner fixed top-0 left-0 right-0 z-[70] flex items-center justify-center gap-3 px-4 py-2.5">
+      <Globe className="w-3 h-3" style={{ color: 'var(--accent)' }} strokeWidth={1.8} />
+      <span className="text-center" style={{ color: 'var(--fg)' }}>
+        <span style={{ color: 'var(--accent-text)' }}>India only</span>
+        <span className="opacity-60 mx-2">·</span>
+        Fixed upfront consultation fee ₹2,000
+        <span className="opacity-60 mx-2">·</span>
+        <span className="opacity-70">Working on supporting clients outside India too</span>
+      </span>
+      <button
+        onClick={() => { sessionStorage.setItem('qhs-banner-dismissed', '1'); setHidden(true); }}
+        className="ml-2 opacity-50 hover:opacity-100 transition-opacity"
+        aria-label="Dismiss"
+        style={{ color: 'var(--fg2)' }}
+      >
+        <X className="w-3 h-3" strokeWidth={1.8} />
+      </button>
+    </div>
+  );
+}
 
 const navItems = [
   { label: 'Home', page: 'Home', number: '00' },
@@ -23,6 +51,8 @@ export default function Layout({ children }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--fg)' }}>
+
+      <TopBanner />
 
       {/* ── Desktop Sidebar ── */}
       <motion.aside
@@ -208,7 +238,7 @@ export default function Layout({ children }) {
       </motion.button>
 
       {/* ── Main Content ── */}
-      <main className="lg:pl-[60px] pt-14 lg:pt-0">
+      <main className="lg:pl-[60px] pt-[88px] lg:pt-[36px]">
         {children}
       </main>
 

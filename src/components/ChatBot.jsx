@@ -92,6 +92,7 @@ export default function ChatBot() {
   const [typing, setTyping] = useState(false);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const containerRef = useRef(null);
 
   useEffect(() => {
     if (open) {
@@ -99,6 +100,25 @@ export default function ChatBot() {
       setTimeout(() => inputRef.current?.focus(), 300);
     }
   }, [open, messages]);
+
+  // Auto-collapse on outside click / Escape
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('touchstart', onPointerDown, { passive: true });
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('touchstart', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
 
   const send = () => {
     const text = input.trim();
@@ -124,7 +144,7 @@ export default function ChatBot() {
   };
 
   return (
-    <>
+    <div ref={containerRef}>
       {/* Chat window */}
       <AnimatePresence>
         {open && (
@@ -240,6 +260,6 @@ export default function ChatBot() {
           )}
         </AnimatePresence>
       </motion.button>
-    </>
+    </div>
   );
 }

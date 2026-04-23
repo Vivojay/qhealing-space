@@ -26,6 +26,10 @@
   --hover-bg: #232838;
   --hover-bg-strong: #2c3346;
 
+  /* Alternating section background — deep accent-blue tint */
+  --bg-accent-section: #15243a;
+  --bg-accent-section-2: #1a2d47;
+
   --font-sans: 'Inter Tight', 'Inter', system-ui, sans-serif;
   --font-display: 'Manrope', 'Inter Tight', sans-serif;
   --font-grotesk: 'Space Grotesk', sans-serif;
@@ -56,6 +60,10 @@ html.light-mode {
 
   --hover-bg: #D2CDC1;
   --hover-bg-strong: #C4BEAF;
+
+  /* Alternating section background — soft accent-blue tint */
+  --bg-accent-section: #DCE5EE;
+  --bg-accent-section-2: #C9D5E2;
 }
 
 html {
@@ -182,6 +190,61 @@ html.lenis, html.lenis body { height: auto; }
 .peek.is-open .peek-hint .dot {
   transform: scale(1.6);
   background: var(--accent-bright);
+}
+
+/* ───────── Alternating accent section ───────── */
+.section-accent {
+  background: var(--bg-accent-section);
+  color: var(--fg);
+  position: relative;
+}
+.section-accent.section-accent-2 { background: var(--bg-accent-section-2); }
+
+/* ───────── Friendly expandable highlight link ─────────
+   A hyperlink whose accent background expands behind the text
+   on hover/focus, then a tooltip-style description peeks out below. */
+.expand-link {
+  position: relative;
+  display: inline-block;
+  padding: 4px 10px;
+  margin: -4px -10px;
+  border-radius: 6px;
+  color: var(--accent-text);
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--accent-dim);
+  transition: background 0.35s cubic-bezier(0.22,1,0.36,1),
+              padding 0.35s cubic-bezier(0.22,1,0.36,1),
+              color 0.2s ease;
+  text-decoration: none;
+}
+.expand-link:hover,
+.expand-link:focus-visible {
+  background: var(--accent-soft);
+  padding: 6px 14px;
+  margin: -6px -14px;
+  outline: none;
+}
+.expand-link::after {
+  content: "↗";
+  display: inline-block;
+  margin-left: 6px;
+  transition: transform 0.3s ease;
+}
+.expand-link:hover::after,
+.expand-link:focus-visible::after {
+  transform: translate(2px, -2px);
+}
+
+/* Top notice banner */
+.top-banner {
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent-soft), var(--accent-dim));
+  border-bottom: 1px solid var(--accent-soft);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 
 /* Subtle grain overlay class */
