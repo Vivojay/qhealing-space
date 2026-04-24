@@ -248,6 +248,41 @@ html.light-mode { scrollbar-color: rgba(20,22,28,0.55) transparent; }
   background: var(--accent-bright);
 }
 
+/* Explicit "Read more" pill — clear visual indicator that the container expands.
+   Adds a rotating chevron on hover/focus and swaps label text via data attribute. */
+.peek-hint-explicit {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.25s ease;
+}
+.peek-hint-explicit .peek-chevron {
+  transition: transform 0.4s cubic-bezier(0.22,1,0.36,1);
+}
+.peek:hover .peek-hint-explicit,
+.peek:focus-within .peek-hint-explicit,
+.peek.is-open .peek-hint-explicit {
+  background: var(--accent-soft) !important;
+  border-color: var(--accent) !important;
+  transform: translateY(-1px);
+}
+.peek:hover .peek-hint-explicit .peek-chevron,
+.peek:focus-within .peek-hint-explicit .peek-chevron,
+.peek.is-open .peek-hint-explicit .peek-chevron {
+  transform: rotate(180deg);
+}
+.peek:hover .peek-hint-explicit .peek-label::after,
+.peek:focus-within .peek-hint-explicit .peek-label::after,
+.peek.is-open .peek-hint-explicit .peek-label::after {
+  content: " — collapse";
+  opacity: 0.6;
+}
+
 /* ───────── Alternating accent section ───────── */
 .section-accent {
   background: var(--bg-accent-section);

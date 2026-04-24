@@ -1,9 +1,10 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Sparkles, BookOpen, Orbit, Clock3, Feather, Music } from 'lucide-react';
+import { Sparkles, BookOpen, Orbit, Clock3, Feather, Music, ChevronDown, ArrowUpRight } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import Footer from '@/components/wellness/Footer';
+import InstagramReelsGrid from '@/components/wellness/InstagramReelsGrid';
 import textureImmo from '../assets/textures/immo-wegmann-R24Vq8RRxWU-unsplash.jpg';
 import textureBernd from '../assets/textures/bernd-dittrich-MFxXebdF0mU-unsplash.jpg';
 
@@ -349,7 +350,7 @@ export default function Home() {
             <em style={{ color: 'var(--fg2)' }}>equally receptive.</em>
           </motion.blockquote>
 
-          {/* Bullets always visible · long copy revealed on hover */}
+          {/* Tenets list · long copy revealed on hover/focus */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -359,7 +360,7 @@ export default function Home() {
             style={{ borderTop: '1px solid var(--border)' }}
             tabIndex={0}
           >
-            <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-4">
+            <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {[
                 'Faith opens the channel',
                 'Improvement is the rule',
@@ -367,10 +368,32 @@ export default function Home() {
                 'Receptivity deepens',
                 'Pathways realign',
                 'Beyond the conventional',
-              ].map((b) => (
-                <li key={b} className="flex items-center gap-3 text-sm" style={{ color: 'var(--fg)' }}>
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }} />
-                  <span className="font-light">{b}</span>
+              ].map((b, i) => (
+                <li
+                  key={b}
+                  className="philosophy-row group flex items-center gap-3 rounded-lg pl-3 pr-3 py-2.5 hover-accent"
+                  style={{
+                    color: 'var(--fg)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--accent-dim)',
+                  }}
+                >
+                  <span
+                    className="philosophy-row-num font-mono text-[10px] tabular-nums tracking-[0.18em]"
+                    style={{ color: 'var(--accent-text)' }}
+                  >
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <span
+                    className="philosophy-row-rule h-px flex-shrink-0"
+                    style={{ width: 18, background: 'var(--accent)', opacity: 0.55 }}
+                  />
+                  <span className="font-light text-[13.5px] flex-1">{b}</span>
+                  <ArrowUpRight
+                    className="w-3.5 h-3.5 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0"
+                    style={{ color: 'var(--accent-text)' }}
+                    strokeWidth={1.8}
+                  />
                 </li>
               ))}
             </ul>
@@ -385,7 +408,22 @@ export default function Home() {
               </div>
             </div>
             <div className="flex items-center gap-6 mt-8">
-              <div className="peek-hint"><span className="dot" /> Read the philosophy</div>
+              <div
+                className="peek-hint peek-hint-explicit inline-flex items-center gap-2 px-3 py-1.5 rounded-full"
+                style={{
+                  border: '1px solid var(--accent-soft)',
+                  background: 'var(--accent-dim)',
+                  color: 'var(--accent-text)',
+                  opacity: 1,
+                }}
+              >
+                <span className="dot" />
+                <span className="peek-label">Read the philosophy</span>
+                <ChevronDown
+                  className="peek-chevron w-3 h-3"
+                  strokeWidth={2}
+                />
+              </div>
               <div className="h-px flex-1" style={{ background: 'var(--border)' }} />
               <span className="text-[11px] tracking-[0.3em] uppercase" style={{ color: 'var(--fg3)' }}>
                 — Vartika Shukla
@@ -648,6 +686,9 @@ export default function Home() {
           </motion.div>
         </div>
       </section>
+
+      {/* ═══ INSTAGRAM REELS ═══ */}
+      <InstagramReelsGrid handle="quantum_healingspace" />
 
       {/* ═══ TESTIMONIALS ═══ */}
       <section className="section-accent section-accent-2 py-28 lg:py-40 relative overflow-hidden" style={{ borderTop: '1px solid var(--border)' }}>

@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Instagram, Mail, MapPin, Phone, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import NewsletterSignup from './NewsletterSignup';
 
 export default function Footer() {
   return (
@@ -203,9 +204,14 @@ export default function Footer() {
           </div>
         </div>
 
+        {/* Newsletter — full-width thin pill above the © bar */}
+        <div className="mb-4">
+          <NewsletterSignup />
+        </div>
+
         {/* Bottom bar */}
         <div
-          className="rounded-2xl px-5 py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3"
+          className="rounded-full px-5 py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3"
           style={{
             border: '1px solid var(--border2)',
             background: 'linear-gradient(90deg, var(--accent-dim), transparent 35%, var(--accent-dim))',
