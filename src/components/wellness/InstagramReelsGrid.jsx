@@ -66,11 +66,11 @@ function ReelTile({ item, idx }) {
       viewport={{ once: true, margin: '-60px' }}
       transition={{ duration: 0.7, delay: (idx % 4) * 0.05, ease: [0.22, 1, 0.36, 1] }}
       whileHover={{ y: -4 }}
-      className="relative block w-full overflow-hidden rounded-xl group"
+      className="relative block w-full overflow-hidden group"
       style={{
         aspectRatio: aspect,
         background: 'var(--bg2)',
-        border: '1px solid var(--border)',
+        border: '0',
         boxShadow: hovered
           ? '0 18px 40px -18px rgba(0,0,0,0.45)'
           : '0 6px 18px -10px rgba(0,0,0,0.25)',
@@ -130,11 +130,11 @@ function PlaceholderTile({ idx }) {
   const aspect = HEIGHT_PATTERN[idx % HEIGHT_PATTERN.length];
   return (
     <div
-      className="relative w-full overflow-hidden rounded-xl animate-pulse"
+      className="relative w-full overflow-hidden animate-pulse"
       style={{
         aspectRatio: aspect,
         background: 'var(--bg2)',
-        border: '1px solid var(--border)',
+        border: '0',
       }}
     />
   );
@@ -241,8 +241,8 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
             </a>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 lg:gap-5 items-start">
-            <div className="flex flex-col gap-3 lg:gap-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 items-start">
+            <div className="flex flex-col gap-0">
               {columnA.map((it, i) =>
                 it._placeholder ? (
                   <PlaceholderTile key={`a-ph-${it._i}`} idx={it._i} />
@@ -251,7 +251,7 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
                 )
               )}
             </div>
-            <div className="flex flex-col gap-3 lg:gap-5 lg:pt-12">
+            <div className="flex flex-col gap-0">
               {columnB.map((it, i) =>
                 it._placeholder ? (
                   <PlaceholderTile key={`b-ph-${it._i}`} idx={it._i} />
