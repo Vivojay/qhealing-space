@@ -46,3 +46,8 @@ attached_assets/screenshot-*.png
 attached_assets/image_*.png
 attached_assets/Pasted-*.txt
 attached_assets/content-*.md
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
