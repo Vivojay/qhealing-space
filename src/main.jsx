@@ -14,6 +14,7 @@ import RetreatCheckout from '@/pages/RetreatCheckout'
 import HinduRituals from '@/pages/HinduRituals'
 import TranscendenceRituals from '@/pages/TranscendenceRituals'
 import Booking from '@/pages/Booking'
+import Admin from '@/pages/Admin'
 import './index.css'
 
 const lenis = new Lenis({
@@ -49,6 +50,7 @@ function AppRoutes() {
           <Route path="/hindu-rituals" element={<HinduRituals />} />
           <Route path="/transcendence-rituals" element={<TranscendenceRituals />} />
           <Route path="/booking" element={<Booking />} />
+          <Route path="/admin/*" element={<Admin />} />
         </Routes>
       </motion.div>
     </AnimatePresence>

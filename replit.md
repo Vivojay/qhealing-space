@@ -16,21 +16,40 @@ A beautiful React-based wellness website featuring a modern design with smooth a
 ## Backend
 The Python FastAPI backend lives in `backend/main.py` and is proxied by Vite under `/api`.
 
-Endpoints:
+Public endpoints:
 - `GET /api/health` — service & integration status
-- `GET /api/instagram/reels?limit=N` — latest media for `INSTAGRAM_BUSINESS_ACCOUNT_ID` via Graph API. Cached 10 min.
+- `GET /api/instagram/reels?limit=N` — latest media for `INSTAGRAM_BUSINESS_ACCOUNT_ID` via Graph API. Cached 10 min. Respects admin curation if set.
+- `GET /api/config` — public site config (instagram handle, contact details, section toggles)
 - `POST /api/newsletter/subscribe` `{ email, source? }` — writes to Firestore `newsletter_subscribers` collection.
+
+Admin endpoints (Bearer token from `/api/admin/login`, HMAC-signed, 12 h TTL):
+- `POST /api/admin/login` → `{ token, expires_at }`
+- `GET /api/admin/me`, `GET /api/admin/metrics`
+- `GET /api/admin/instagram`, `POST /api/admin/instagram/refresh`
+- `GET|PUT /api/admin/instagram/curation` — pick the IG posts shown on the home grid
+- `GET|DELETE /api/admin/newsletter/subscribers[/{email}]`, `GET /api/admin/newsletter/export` (CSV)
+- `GET|PUT /api/admin/config`
 
 Required environment secrets:
 - `FIREBASE_SERVICE_ACCOUNT_JSON` (full JSON of a service account key) + `FIREBASE_PROJECT_ID`
 - `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_BUSINESS_ACCOUNT_ID` (long-lived Page/IG access token + numeric IG business account id)
+- `ADMIN_PASSWORD` — required to enable the admin dashboard at `/admin`
+- `ADMIN_TOKEN_SECRET` (optional) — extra HMAC pepper for admin tokens
 
 ## Project Structure
 ```
 ├── backend/
-│   └── main.py                # FastAPI app (health, instagram, newsletter)
+│   └── main.py                # FastAPI app (health, instagram, newsletter, admin)
 ├── src/
 │   ├── components/
+│   │   ├── admin/                        # Admin dashboard at /admin
+│   │   │   ├── api.js                    # token + fetch helpers
+│   │   │   ├── AdminLayout.jsx           # sidebar shell
+│   │   │   ├── AdminLogin.jsx            # password form
+│   │   │   ├── AdminOverview.jsx         # metrics + system status
+│   │   │   ├── AdminInstagram.jsx        # curate which reels show on home
+│   │   │   ├── AdminNewsletter.jsx       # subscribers table + CSV export
+│   │   │   └── AdminSettings.jsx         # site config editor
 │   │   └── wellness/
 │   │       ├── AboutSection.jsx
 │   │       ├── Footer.jsx                # includes NewsletterSignup pill above © bar
@@ -41,6 +60,7 @@ Required environment secrets:
 │   │       ├── ServicesSection.jsx
 │   │       └── TestimonialsMarquee.jsx
 │   ├── pages/
+│   │   ├── Admin.jsx                     # /admin/* router (login + tabs)
 │   │   └── Home.jsx
 │   ├── utils/
 │   │   └── index.js
@@ -73,3 +93,4 @@ npm run build
 - Newsletter signup: thin full-width rounded-full pill in the footer (just above the © bar), validates email, posts to backend, writes to Firestore
 - Testimonials marquee with infinite scroll
 - Modern footer with contact information
+- **Admin dashboard at `/admin`**: password-gated, HMAC bearer-token sessions (12 h). Tabs: Overview (metrics + system status), Instagram (pick & reorder which posts appear on the homepage, refresh from IG, drag-to-reorder, max 8), Newsletter (search, remove subscribers, CSV export), Settings (site-wide config: handle, contact info, section toggles)

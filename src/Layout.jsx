@@ -72,6 +72,11 @@ export default function Layout({ children }) {
   // Auto-collapse the sidebar whenever the route changes (mobile-friendly)
   useEffect(() => { setExpanded(false); }, [location.pathname]);
 
+  // Admin pages render their own chrome — bypass the public site shell entirely.
+  if (location.pathname.startsWith('/admin')) {
+    return <>{children}</>;
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--fg)' }}>
 
