@@ -41,9 +41,11 @@ from typing import Any
 
 import firebase_admin
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from firebase_admin import credentials, firestore
+from google.api_core import exceptions as gcloud_exc
 from pydantic import BaseModel, EmailStr, Field
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -241,6 +243,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(gcloud_exc.PermissionDenied)
+async def _gcloud_permission_denied(_request: Request, exc: gcloud_exc.PermissionDenied):
+    msg = str(exc)
+    if "firestore.googleapis.com" in msg or "Firestore API" in msg:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": (
+                    "The Cloud Firestore API is disabled for this Google Cloud project. "
+                    "Enable it in the Google Cloud Console (search 'Firestore API'), wait ~1 minute, "
+                    "then retry. The link is in the server logs."
+                ),
+                "code": "firestore_disabled",
+            },
+        )
+    return JSONResponse(status_code=403, content={"detail": msg, "code": "permission_denied"})
+
+
+@app.exception_handler(gcloud_exc.FailedPrecondition)
+async def _gcloud_failed_precondition(_request: Request, exc: gcloud_exc.FailedPrecondition):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": f"Firestore is not ready: {exc}", "code": "firestore_not_ready"},
+    )
+
+
+@app.exception_handler(gcloud_exc.GoogleAPICallError)
+async def _gcloud_call_error(_request: Request, exc: gcloud_exc.GoogleAPICallError):
+    log.error("Google API call error: %s", exc)
+    return JSONResponse(
+        status_code=502,
+        content={"detail": f"Google API error: {exc.message or str(exc)}", "code": "google_api_error"},
+    )
 
 
 @app.get("/api/health")
