@@ -44,22 +44,37 @@ export default function Footer() {
           </h3>
         </motion.div>
 
-        <div className="grid lg:grid-cols-12 gap-12 lg:gap-16 mb-20">
+        <div className="grid lg:grid-cols-12 gap-10 lg:gap-14 mb-16 lg:mb-20">
 
           {/* Brand */}
-          <div className="lg:col-span-6">
+          <div className="lg:col-span-5">
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.7 }}
             >
-              <p className="text-sm font-light leading-relaxed max-w-md mb-8" style={{ color: 'var(--fg2)' }}>
+              <p className="text-sm font-light leading-relaxed max-w-lg mb-8" style={{ color: 'var(--fg2)' }}>
                 Individual Healings · Spiritual Workshops · Retreats · Corporate Interventions.
                 Guided by Vartika Shukla — healer, hypnotherapist, life coach.
               </p>
+              <div className="flex flex-wrap gap-2.5 mb-8">
+                {['By appointment', 'Private sessions', 'Online + In person'].map((item) => (
+                  <span
+                    key={item}
+                    className="text-[10px] uppercase tracking-[0.2em] px-3 py-1.5 rounded-full"
+                    style={{
+                      color: 'var(--accent-text)',
+                      border: '1px solid var(--accent-soft)',
+                      background: 'var(--accent-dim)',
+                    }}
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
               <Link
-                to="/booking"
+                to={`/booking?service=${encodeURIComponent('Other / Not sure yet')}`}
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-xs tracking-[0.25em] uppercase hover-accent"
                 style={{
                   background: 'var(--accent)',
@@ -74,79 +89,136 @@ export default function Footer() {
 
           {/* Sitemap */}
           <div className="lg:col-span-3">
-            <p className="text-[10px] tracking-[0.3em] uppercase mb-6" style={{ color: 'var(--fg3)' }}>Explore</p>
-            <ul className="space-y-3">
-              {[
-                ['Home', '/'],
-                ['Healings', '/healings'],
-                ['Global Practices', '/global-practices'],
-                ['Retreats', '/retreats'],
-                ['Hindu Rituals', '/hindu-rituals'],
-              ].map(([label, href]) => (
-                <li key={href}>
-                  <Link
-                    to={href}
-                    className="text-sm font-light hover-accent inline-block px-2 -mx-2 py-1 rounded"
-                    style={{ color: 'var(--fg2)' }}
-                  >
-                    {label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.7, delay: 0.08 }}
+              className="h-full rounded-2xl p-6"
+              style={{
+                border: '1px solid var(--border2)',
+                background: 'linear-gradient(180deg, var(--accent-dim), transparent)',
+              }}
+            >
+              <p className="text-[10px] tracking-[0.3em] uppercase mb-5" style={{ color: 'var(--fg3)' }}>Explore</p>
+              <ul className="space-y-2">
+                {[
+                  ['Home', '/'],
+                  ['Healings', '/healings'],
+                  ['Global Practices', '/global-practices'],
+                  ['Retreats', '/retreats'],
+                  ['Hindu Rituals', '/hindu-rituals'],
+                ].map(([label, href]) => (
+                  <li key={href}>
+                    <Link
+                      to={href}
+                      className="group flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-light hover-accent"
+                      style={{ color: 'var(--fg2)' }}
+                    >
+                      <span>{label}</span>
+                      <ArrowUpRight className="w-3.5 h-3.5 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" strokeWidth={1.8} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
           </div>
 
           {/* Contact */}
-          <div className="lg:col-span-3">
-            <p className="text-[10px] tracking-[0.3em] uppercase mb-6" style={{ color: 'var(--fg3)' }}>Connect</p>
-            <ul className="space-y-5">
-              <li className="flex items-start gap-3">
-                <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--accent-text)' }} strokeWidth={1.5} />
-                <span className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
-                  Sector 56, Gurugram<br />Haryana – 122011
-                </span>
-              </li>
-              <li className="flex items-center gap-3">
-                <Phone className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-text)' }} strokeWidth={1.5} />
-                <span className="text-sm font-light" style={{ color: 'var(--fg2)' }}>+91 9267904256</span>
-              </li>
-              <li className="flex items-center gap-3">
-                <Mail className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-text)' }} strokeWidth={1.5} />
-                <span className="text-sm font-light" style={{ color: 'var(--fg2)' }}>vartikashukla@xyz.com</span>
-              </li>
-              <li>
-                <a
-                  href="https://www.instagram.com/quantum_healingspace"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-3 mt-2 group"
-                >
-                  <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center hover-accent"
-                    style={{ border: '1px solid var(--border2)' }}
+          <div className="lg:col-span-4">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.7, delay: 0.14 }}
+              className="h-full rounded-2xl p-6"
+              style={{
+                border: '1px solid var(--border2)',
+                background: 'linear-gradient(180deg, var(--accent-dim), transparent)',
+              }}
+            >
+              <p className="text-[10px] tracking-[0.3em] uppercase mb-5" style={{ color: 'var(--fg3)' }}>Connect</p>
+              <ul className="space-y-1.5">
+                <li>
+                  <a
+                    href="https://maps.google.com/?q=Sector+56,+Gurugram,+Haryana+122011"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group footer-contact-row flex w-full items-start gap-3 rounded-lg px-3 py-2.5 hover-accent"
+                    style={{ color: 'var(--fg2)' }}
                   >
-                    <Instagram className="w-3.5 h-3.5" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />
-                  </div>
-                  <span className="text-[11px] tracking-widest uppercase" style={{ color: 'var(--fg3)' }}>
-                    @quantum_healingspace
-                  </span>
-                </a>
-              </li>
-            </ul>
+                    <div
+                      className="footer-icon-chip w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ border: '1px solid var(--border2)' }}
+                    >
+                      <MapPin className="w-3.5 h-3.5" style={{ color: 'var(--accent-text)' }} strokeWidth={1.5} />
+                    </div>
+                    <span className="min-w-0 text-sm font-light leading-relaxed">
+                      Sector 56, Gurugram<br />Haryana - 122011
+                    </span>
+                  </a>
+                </li>
+                <li>
+                  <a href="tel:+919267904256" className="group footer-contact-row flex w-full items-center gap-3 rounded-lg px-3 py-2.5 hover-accent" style={{ color: 'var(--fg2)' }}>
+                    <div
+                      className="footer-icon-chip w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ border: '1px solid var(--border2)' }}
+                    >
+                      <Phone className="w-3.5 h-3.5" style={{ color: 'var(--accent-text)' }} strokeWidth={1.5} />
+                    </div>
+                    <span className="text-sm font-light">+91 9267904256</span>
+                  </a>
+                </li>
+                <li>
+                  <a href="mailto:vartikashukla@xyz.com" className="group footer-contact-row flex w-full items-center gap-3 rounded-lg px-3 py-2.5 hover-accent" style={{ color: 'var(--fg2)' }}>
+                    <div
+                      className="footer-icon-chip w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ border: '1px solid var(--border2)' }}
+                    >
+                      <Mail className="w-3.5 h-3.5" style={{ color: 'var(--accent-text)' }} strokeWidth={1.5} />
+                    </div>
+                    <span className="min-w-0 break-all text-sm font-light leading-snug">vartikashukla@xyz.com</span>
+                  </a>
+                </li>
+                <li className="pt-1">
+                  <a
+                    href="https://www.instagram.com/quantum_healingspace"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group footer-contact-row flex w-full items-center gap-3 mt-1 rounded-lg px-3 py-2 hover-accent"
+                  >
+                    <div
+                      className="footer-icon-chip w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ border: '1px solid var(--border2)' }}
+                    >
+                      <Instagram className="w-3.5 h-3.5" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />
+                    </div>
+                    <span className="min-w-0 break-all text-[10px] sm:text-[11px] tracking-[0.14em] uppercase" style={{ color: 'var(--fg3)' }}>
+                      @quantum_healingspace
+                    </span>
+                  </a>
+                </li>
+              </ul>
+            </motion.div>
           </div>
         </div>
 
         {/* Bottom bar */}
         <div
-          className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pt-8"
-          style={{ borderTop: '1px solid var(--border2)' }}
+          className="rounded-2xl px-5 py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3"
+          style={{
+            border: '1px solid var(--border2)',
+            background: 'linear-gradient(90deg, var(--accent-dim), transparent 35%, var(--accent-dim))',
+          }}
         >
           <p className="text-xs font-light" style={{ color: 'var(--fg3)' }}>
             © {new Date().getFullYear()} Quantum Healing Space · All rights reserved.
           </p>
-          <p className="text-xs font-mono tracking-wider" style={{ color: 'var(--fg3)' }}>
-            QHS · v1.0 · Gurugram
-          </p>
+          <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--fg3)' }}>
+            <span className="font-mono tracking-wider">QHS v1.0</span>
+            <span aria-hidden>·</span>
+            <span className="font-light">Gurugram, India</span>
+          </div>
         </div>
       </div>
     </footer>

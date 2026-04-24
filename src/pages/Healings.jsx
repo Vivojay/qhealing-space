@@ -170,7 +170,7 @@ function HealingRow({ h, i }) {
             {open ? 'Less' : 'Read more'}
           </button>
           <Link
-            to="/booking"
+            to={`/booking?service=${encodeURIComponent(h.name)}`}
             className="text-xs tracking-widest uppercase pb-1 hover-accent inline-block"
             style={{ color: 'var(--accent-text)', borderBottom: '1px solid var(--accent-soft)' }}
           >
@@ -235,7 +235,7 @@ export default function Healings() {
           Including: Color Therapy · Switch Words · Dowsing · Cellular Memory Release · Meridian Clearing · Womb Healing · Zibu Symbols · Tarot · Automatic Writing · and more.
         </p>
         <Link
-          to="/booking"
+          to={`/booking?service=${encodeURIComponent('Other / Not sure yet')}`}
           className="inline-block mt-8 text-xs tracking-widest uppercase pb-1 hover-accent"
           style={{ color: 'var(--accent-text)', borderBottom: '1px solid var(--accent-soft)' }}
         >

@@ -24,16 +24,24 @@ function TopBanner() {
   });
   if (!isPaymentPage(pathname) || hidden) return null;
   return (
-    <div className="top-banner fixed top-0 left-0 right-0 z-[70] flex items-center justify-center gap-3 px-4 py-2.5">
+    <div className="top-banner fixed top-0 left-0 right-0 z-[55] flex items-center justify-center gap-3 px-4 py-2.5">
       <Globe className="w-3 h-3" style={{ color: 'var(--accent)' }} strokeWidth={1.8} />
-      <span className="text-center" style={{ color: 'var(--fg)' }}>
-        <span style={{ color: 'var(--accent-text)' }}>India</span>
-        <span className="opacity-60 mx-2">·</span>
-        Consultation ₹2,500
-        <span className="opacity-60 mx-2">·</span>
-        <span style={{ color: 'var(--accent-text)' }}>Outside India</span>
-        <span className="opacity-60 mx-2">·</span>
-        $50 USD
+      <span className="text-center" style={{ color: 'var(--fg)', textTransform: 'none' }}>
+        <span
+          style={{
+            color: 'var(--accent-text)',
+            background: 'var(--accent-soft)',
+            border: '1px solid var(--accent)',
+            borderRadius: '999px',
+            fontWeight: 700,
+            padding: '2px 8px',
+          }}
+        >
+          placeholder
+        </span>
+        <span style={{ color: '#fff', fontWeight: 400 }} className="ml-2">
+          text
+        </span>
       </span>
       <button
         onClick={() => { sessionStorage.setItem('qhs-banner-dismissed', '1'); setHidden(true); }}

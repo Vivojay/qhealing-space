@@ -1,16 +1,49 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { Link } from 'react-router-dom';
+import { Sparkles, BookOpen, Orbit, Clock3, Feather, Music } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import Footer from '@/components/wellness/Footer';
+import textureImmo from '../assets/textures/immo-wegmann-R24Vq8RRxWU-unsplash.jpg';
+import textureBernd from '../assets/textures/bernd-dittrich-MFxXebdF0mU-unsplash.jpg';
 
 const SERVICES = [
-  { name: 'Reiki', desc: 'Universal life force energy channeled for deep healing and restoration of balance.' },
-  { name: 'Akashic Records', desc: 'Access the soul\'s vibrational archive — past, present, and future — to reveal hidden patterns.' },
-  { name: 'Deep Chakra Healing', desc: 'Balance your 7 energy centers to transform physical, emotional, and spiritual wellbeing.' },
-  { name: 'Past Life Regression', desc: 'Uncover karmic roots behind present-day fears, patterns, and chronic conditions.' },
-  { name: 'Angel Therapy', desc: 'Connect with archangels and guardian angels for guidance across all areas of life.' },
-  { name: 'Sound Therapy', desc: 'Tibetan bowls and tuning forks create resonance fields for cellular healing.' },
+  {
+    name: 'Reiki',
+    bookingService: 'Reiki Healing',
+    icon: Sparkles,
+    desc: 'Universal life force energy channeled for deep healing and restoration of balance.',
+  },
+  {
+    name: 'Akashic Records',
+    bookingService: 'Akashic Records',
+    icon: BookOpen,
+    desc: 'Access the soul\'s vibrational archive — past, present, and future — to reveal hidden patterns.',
+  },
+  {
+    name: 'Deep Chakra Healing',
+    bookingService: 'Deep Chakra Healing',
+    icon: Orbit,
+    desc: 'Balance your 7 energy centers to transform physical, emotional, and spiritual wellbeing.',
+  },
+  {
+    name: 'Past Life Regression',
+    bookingService: 'Past Life Regression',
+    icon: Clock3,
+    desc: 'Uncover karmic roots behind present-day fears, patterns, and chronic conditions.',
+  },
+  {
+    name: 'Angel Therapy',
+    bookingService: 'Angel Therapy',
+    icon: Feather,
+    desc: 'Connect with archangels and guardian angels for guidance across all areas of life.',
+  },
+  {
+    name: 'Sound Therapy',
+    bookingService: 'Sound Therapy',
+    icon: Music,
+    desc: 'Tibetan bowls and tuning forks create resonance fields for cellular healing.',
+  },
 ];
 
 const SERVICE_BG = [
@@ -42,11 +75,28 @@ const TESTIMONIALS = [
 
 export default function Home() {
   const heroRef = useRef(null);
+  const heroWordmarkRef = useRef(null);
   const [mouseX, setMouseX] = useState(0);
   const [mouseY, setMouseY] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [heroHeight, setHeroHeight] = useState(null);
+  const [wordmarkEdgeInset, setWordmarkEdgeInset] = useState(24);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const bgY = useTransform(scrollYProgress, [0, 1], ['0%', '20%']);
+
+  const syncHeroGeometry = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
+    const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || 0);
+    const edgeInset = Math.max(16, Math.min(40, Math.round(viewportHeight * 0.04)));
+    const textHeight = heroWordmarkRef.current
+      ? Math.ceil(heroWordmarkRef.current.getBoundingClientRect().height)
+      : 0;
+    const requiredHeight = textHeight ? Math.max(viewportHeight, textHeight + edgeInset * 2) : viewportHeight;
+
+    setWordmarkEdgeInset((prev) => (prev === edgeInset ? prev : edgeInset));
+    setHeroHeight((prev) => (prev === requiredHeight ? prev : requiredHeight));
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -58,11 +108,36 @@ export default function Home() {
     return () => window.removeEventListener('mousemove', onMove);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    let raf = 0;
+    const queueSync = () => {
+      window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(syncHeroGeometry);
+    };
+
+    queueSync();
+    window.addEventListener('resize', queueSync);
+    window.visualViewport?.addEventListener('resize', queueSync);
+    document.fonts?.ready?.then(queueSync).catch(() => {});
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener('resize', queueSync);
+      window.visualViewport?.removeEventListener('resize', queueSync);
+    };
+  }, [syncHeroGeometry]);
+
   return (
     <div style={{ background: 'var(--bg)' }}>
 
       {/* ═══ HERO ═══ */}
-      <section ref={heroRef} className="relative h-screen overflow-hidden">
+      <section
+        ref={heroRef}
+        className="relative overflow-hidden"
+        style={{ height: heroHeight ? `${heroHeight}px` : '100svh' }}
+      >
         {/* Background image */}
         <motion.div
           className="absolute inset-0 scale-[1.08]"
@@ -80,20 +155,21 @@ export default function Home() {
             className="w-full h-full object-cover"
           />
         </motion.div>
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to right, var(--bg) 28%, rgba(12,10,9,0.65) 55%, rgba(12,10,9,0.1) 100%)' }} />
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, var(--bg) 0%, transparent 30%)' }} />
+        <div className="absolute inset-0" style={{ background: 'var(--hero-overlay-left)' }} />
+        <div className="absolute inset-0" style={{ background: 'var(--hero-overlay-bottom)' }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'var(--hero-overlay-glow)' }} />
 
         {/* ── QUANTUM HEALING SPACE — TRUE VERTICAL text (writing-mode) ── */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none select-none">
+        <div
+          className="absolute right-0 overflow-hidden pointer-events-none select-none flex items-center"
+          style={{ top: `${wordmarkEdgeInset}px`, bottom: `${wordmarkEdgeInset}px` }}
+        >
           <motion.div
+            ref={heroWordmarkRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 1.6, delay: 0.4, ease: 'easeOut' }}
             style={{
-              position: 'absolute',
-              right: 0,
-              top: 0,
-              height: '100%',
               writingMode: 'vertical-rl',
               textOrientation: 'mixed',
               fontSize: 'clamp(3rem, 14vh, 22rem)',
@@ -101,11 +177,14 @@ export default function Home() {
               fontWeight: 500,
               letterSpacing: '-0.055em',
               lineHeight: 0.92,
+              whiteSpace: 'nowrap',
               color: 'var(--accent-text)',
               opacity: 0.14,
             }}
           >
-            QUANTUM HEALING SPACE
+            <span style={{ display: 'inline-block' }}>QUANTUM</span>
+            <br />
+            <span style={{ display: 'inline-block', paddingTop: '2ch' }}>{'HEALING\u00A0SPACE'}</span>
           </motion.div>
         </div>
 
@@ -154,7 +233,7 @@ export default function Home() {
                 Explore Healings
               </Link>
               <Link
-                to="/booking"
+                to={`${createPageUrl('Booking')}?service=${encodeURIComponent('Other / Not sure yet')}`}
                 className="px-7 py-3 text-xs tracking-widest uppercase transition-opacity hover:opacity-70"
                 style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
               >
@@ -202,12 +281,41 @@ export default function Home() {
 
       {/* ═══ MANIFESTO ═══ */}
       <section className="relative py-28 lg:py-40 overflow-hidden" style={{ background: 'var(--bg)' }}>
-        {/* Decorative offset rectangle — purely decorative, behind all content */}
         <div
-          className="absolute top-16 left-[10%] w-[70%] h-[70%] pointer-events-none"
-          style={{ border: '1px solid var(--border)' }}
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: `url(${textureImmo})`,
+            backgroundSize: '520px auto',
+            backgroundRepeat: 'repeat',
+            backgroundPosition: 'center',
+            opacity: 0.2,
+            mixBlendMode: 'soft-light',
+          }}
           aria-hidden
         />
+
+        {/* Decorative frame with curved bezier left edge */}
+        <svg
+          className="absolute top-16 left-[10%] w-[70%] h-[70%] pointer-events-none"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <path
+            d="M11 1 C3 11 2 24 10 33 C18 43 18 56 9 66 C1 76 3 90 11 99 L99 99 L99 1 Z"
+            fill="none"
+            stroke="var(--border)"
+            strokeWidth="0.9"
+            vectorEffect="non-scaling-stroke"
+          />
+          <path
+            d="M13 7 C8 18 7 28 12 36 C17 44 17 56 12 64 C7 73 8 84 13 93"
+            fill="none"
+            stroke="var(--accent-soft)"
+            strokeWidth="0.75"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
 
         <div className="max-w-5xl mx-auto px-8 lg:px-16 relative">
           <motion.p
@@ -330,46 +438,59 @@ export default function Home() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px" style={{ background: 'var(--border)' }}>
-            {SERVICES.map((s, i) => (
-              <motion.div
-                key={s.name}
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: i * 0.07 }}
-                className="peek p-10 lg:p-14 group cursor-pointer min-h-[280px] flex flex-col justify-between"
-                style={{ background: SERVICE_BG[i], transition: 'background-color 0.2s ease, transform 0.2s ease' }}
-                whileHover={{ backgroundColor: 'var(--hover-bg-strong)', y: -4 }}
-                tabIndex={0}
-              >
-                <div>
-                  <span className="text-[10px] font-mono mb-6 block" style={{ color: i % 3 === 0 ? 'var(--accent)' : 'var(--fg3)' }}>
-                    {String(i + 1).padStart(2, '0')}
+            {SERVICES.map((s, i) => {
+              const Icon = s.icon;
+              return (
+                <motion.div
+                  key={s.name}
+                  initial={{ opacity: 0 }}
+                  whileInView={{ opacity: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: i * 0.07 }}
+                  className="peek p-10 lg:p-14 group cursor-pointer min-h-[280px] flex flex-col justify-between hover-surface-strong"
+                  style={{ background: SERVICE_BG[i], transition: 'background-color 0.2s ease, transform 0.2s ease' }}
+                  whileHover={{ y: -4 }}
+                  tabIndex={0}
+                >
+                  <span
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-full mb-6"
+                    style={{
+                      border: '1px solid var(--border2)',
+                      background: i % 3 === 0 ? 'var(--accent-soft)' : 'transparent',
+                    }}
+                  >
+                    <Icon
+                      className="w-4 h-4"
+                      style={{ color: i % 3 === 0 ? 'var(--accent)' : 'var(--fg3)' }}
+                      strokeWidth={1.8}
+                    />
                   </span>
-                  <h3
-                    className="hero-display text-3xl lg:text-4xl"
-                    style={{ color: 'var(--fg)' }}
-                  >
-                    {s.name}
-                  </h3>
-                  <div className="peek-content">
-                    <p className="text-[13px] font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
-                      {s.desc}
-                    </p>
+                  <div>
+                    <h3
+                      className="hero-display text-3xl lg:text-4xl"
+                      style={{ color: 'var(--fg)' }}
+                    >
+                      {s.name}
+                    </h3>
+                    <div className="peek-content">
+                      <p className="text-[13px] font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                        {s.desc}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center justify-between mt-8">
-                  <div className="peek-hint"><span className="dot" /> Read</div>
-                  <Link
-                    to="/booking"
-                    className="text-[10px] tracking-widest uppercase hover-accent inline-block"
-                    style={{ color: 'var(--accent-text)' }}
-                  >
-                    Book →
-                  </Link>
-                </div>
-              </motion.div>
-            ))}
+                  <div className="flex items-center justify-between mt-8">
+                    <div className="peek-hint"><span className="dot" /> Read</div>
+                    <Link
+                      to={`${createPageUrl('Booking')}?service=${encodeURIComponent(s.bookingService)}`}
+                      className="text-[10px] tracking-widest uppercase hover-accent inline-block"
+                      style={{ color: 'var(--accent-text)' }}
+                    >
+                      Book →
+                    </Link>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
 
           <div className="mt-8 lg:hidden">
@@ -583,6 +704,18 @@ export default function Home() {
 
       {/* ═══ CTA BANNER ═══ */}
       <section className="py-24 lg:py-32 relative overflow-hidden" style={{ borderTop: '1px solid var(--border)' }}>
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: `url(${textureBernd})`,
+            backgroundSize: '600px auto',
+            backgroundRepeat: 'repeat',
+            backgroundPosition: 'center',
+            opacity: 0.17,
+            mixBlendMode: 'soft-light',
+          }}
+          aria-hidden
+        />
         <div className="max-w-7xl mx-auto px-8 lg:px-16 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-12">
           <div>
             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}
@@ -609,7 +742,7 @@ export default function Home() {
             className="flex flex-col sm:flex-row gap-4"
           >
             <Link
-              to="/booking"
+              to={`${createPageUrl('Booking')}?service=${encodeURIComponent('Other / Not sure yet')}`}
               className="px-8 py-4 text-xs tracking-widest uppercase text-center transition-opacity hover:opacity-80"
               style={{ background: 'var(--accent)', color: '#fff' }}
             >

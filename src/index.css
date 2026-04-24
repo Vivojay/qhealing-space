@@ -22,6 +22,11 @@
   --warm: #D9A878;
   --warm-soft: rgba(217, 168, 120, 0.18);
 
+  /* Homepage hero overlays */
+  --hero-overlay-left: linear-gradient(to right, rgba(14, 16, 20, 0.78) 24%, rgba(12, 10, 9, 0.48) 56%, rgba(12, 10, 9, 0.08) 100%);
+  --hero-overlay-bottom: linear-gradient(to top, rgba(14, 16, 20, 0.78) 0%, rgba(14, 16, 20, 0.24) 33%, transparent 62%);
+  --hero-overlay-glow: radial-gradient(circle at 80% 24%, rgba(107, 160, 204, 0.14), transparent 56%);
+
   /* Hover surfaces — deliberately distinct from bg */
   --hover-bg: #232838;
   --hover-bg-strong: #2c3346;
@@ -64,6 +69,11 @@ html.light-mode {
   --accent-text: #2E5A8E;
   --warm: #B07A3F;
   --warm-soft: rgba(176, 122, 63, 0.18);
+
+  /* Homepage hero overlays */
+  --hero-overlay-left: linear-gradient(to right, rgba(236, 233, 226, 0.8) 24%, rgba(198, 212, 228, 0.42) 56%, rgba(198, 212, 228, 0.1) 100%);
+  --hero-overlay-bottom: linear-gradient(to top, rgba(236, 233, 226, 0.82) 0%, rgba(236, 233, 226, 0.3) 36%, transparent 64%);
+  --hero-overlay-glow: radial-gradient(circle at 80% 24%, rgba(61, 117, 181, 0.12), transparent 58%);
 
   --hover-bg: #D2CDC1;
   --hover-bg-strong: #C4BEAF;
@@ -141,6 +151,13 @@ html.light-mode { scrollbar-color: rgba(20,22,28,0.55) transparent; }
   background-color: var(--hover-bg) !important;
   color: var(--fg) !important;
 }
+.hover-surface-strong {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.hover-surface-strong:hover {
+  background-color: var(--hover-bg-strong) !important;
+  color: var(--fg) !important;
+}
 .hover-accent {
   transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
@@ -154,6 +171,18 @@ html.light-mode { scrollbar-color: rgba(20,22,28,0.55) transparent; }
 }
 .hover-lift:hover {
   transform: translateY(-3px);
+}
+
+.footer-contact-row .footer-icon-chip {
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.footer-contact-row:hover .footer-icon-chip,
+.footer-contact-row:focus-visible .footer-icon-chip,
+.footer-contact-row:focus-within .footer-icon-chip {
+  background-color: var(--accent-soft);
+  border-color: var(--accent);
+  transform: translateY(-1px);
 }
 
 /* Image masks */
@@ -237,6 +266,20 @@ html.light-mode { scrollbar-color: rgba(20,22,28,0.55) transparent; }
 @keyframes mandala-spin { to { transform: rotate(360deg); } }
 .mandala-rotate { animation: mandala-spin 80s linear infinite; transform-origin: center; }
 .mandala-rotate-rev { animation: mandala-spin 120s linear infinite reverse; transform-origin: center; }
+
+@keyframes corner-ring-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.corner-ring-spin {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: center;
+  animation: corner-ring-spin 42s linear infinite;
+  opacity: 0.78;
+}
 
 /* ───────── Friendly expandable highlight link ─────────
    A hyperlink whose accent background expands behind the text

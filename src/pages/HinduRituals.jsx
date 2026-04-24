@@ -42,10 +42,12 @@ const rituals = [
 ];
 
 /* ──────────────────────────────────────────
-   Sri Yantra-inspired SVG mandala
+   Intricate Sri Yantra + lotus inspired mandala
    Used as a slowly rotating background flourish.
    ────────────────────────────────────────── */
 function Mandala({ size = 480, opacity = 0.08, reverse = false, className = '' }) {
+  const cx = 100;
+  const cy = 100;
   return (
     <svg
       width={size}
@@ -55,37 +57,70 @@ function Mandala({ size = 480, opacity = 0.08, reverse = false, className = '' }
       style={{ opacity }}
       aria-hidden="true"
     >
-      <g fill="none" stroke="currentColor" strokeWidth="0.4">
-        <circle cx="100" cy="100" r="98" />
-        <circle cx="100" cy="100" r="84" />
-        <circle cx="100" cy="100" r="70" />
-        <circle cx="100" cy="100" r="56" />
-        <circle cx="100" cy="100" r="42" />
-        <circle cx="100" cy="100" r="28" />
-        <circle cx="100" cy="100" r="14" />
-        {/* 12 radial spokes */}
-        {Array.from({ length: 12 }).map((_, i) => {
-          const a = (i * 30 * Math.PI) / 180;
-          const x2 = 100 + Math.cos(a) * 98;
-          const y2 = 100 + Math.sin(a) * 98;
-          return <line key={i} x1="100" y1="100" x2={x2} y2={y2} />;
-        })}
-        {/* Sri Yantra-style triangles (4 up, 4 down) */}
-        {[0, 45, 90, 135].map((rot, i) => (
-          <polygon
-            key={`t-${i}`}
-            points="100,30 140,140 60,140"
-            transform={`rotate(${rot} 100 100)`}
-            strokeWidth="0.5"
-          />
-        ))}
-        {/* Lotus petals around r=70 */}
-        {Array.from({ length: 16 }).map((_, i) => {
-          const a = (i * 22.5 * Math.PI) / 180;
-          const cx = 100 + Math.cos(a) * 70;
-          const cy = 100 + Math.sin(a) * 70;
-          return <ellipse key={`p-${i}`} cx={cx} cy={cy} rx="6" ry="14" transform={`rotate(${i * 22.5} ${cx} ${cy})`} />;
-        })}
+      <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+        <g strokeWidth="0.42" opacity="0.95">
+          {[98, 92, 86, 78, 70, 60, 50, 38, 26, 14].map((r) => (
+            <circle key={`ring-${r}`} cx={cx} cy={cy} r={r} />
+          ))}
+        </g>
+
+        <g strokeWidth="0.48" opacity="0.85">
+          {Array.from({ length: 24 }).map((_, i) => (
+            <line
+              key={`spoke-${i}`}
+              x1={cx}
+              y1={cy - 98}
+              x2={cx}
+              y2={cy - 26}
+              transform={`rotate(${i * 15} ${cx} ${cy})`}
+            />
+          ))}
+        </g>
+
+        <g strokeWidth="0.52" opacity="0.8">
+          {Array.from({ length: 32 }).map((_, i) => (
+            <ellipse
+              key={`petal-${i}`}
+              cx={cx}
+              cy={cy - 76}
+              rx="4.8"
+              ry="16.5"
+              transform={`rotate(${i * 11.25} ${cx} ${cy})`}
+            />
+          ))}
+          {Array.from({ length: 16 }).map((_, i) => (
+            <ellipse
+              key={`inner-petal-${i}`}
+              cx={cx}
+              cy={cy - 54}
+              rx="4.6"
+              ry="12"
+              transform={`rotate(${i * 22.5} ${cx} ${cy})`}
+            />
+          ))}
+        </g>
+
+        <g strokeWidth="0.56" opacity="0.82">
+          {[0, 40, 80, 120, 160].map((angle) => (
+            <polygon key={`tri-up-${angle}`} points="100,18 154,140 46,140" transform={`rotate(${angle} ${cx} ${cy})`} />
+          ))}
+          {[20, 60, 100, 140, 180].map((angle) => (
+            <polygon key={`tri-down-${angle}`} points="100,182 42,62 158,62" transform={`rotate(${angle} ${cx} ${cy})`} />
+          ))}
+        </g>
+
+        <g fill="currentColor" stroke="none" opacity="0.6">
+          {Array.from({ length: 48 }).map((_, i) => {
+            const a = (i * 7.5 * Math.PI) / 180;
+            const r = i % 2 ? 84 : 66;
+            return <circle key={`dot-${i}`} cx={cx + Math.cos(a) * r} cy={cy + Math.sin(a) * r} r={i % 4 === 0 ? 1.2 : 0.8} />;
+          })}
+        </g>
+
+        <g strokeWidth="0.78" opacity="0.9">
+          <circle cx={cx} cy={cy} r="6" />
+          <circle cx={cx} cy={cy} r="2.8" />
+        </g>
       </g>
     </svg>
   );

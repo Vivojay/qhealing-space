@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, Calendar, CreditCard, Shield, Globe2, MessageCircle, ChevronDown, Sparkles, MapPin, ArrowRight, Banknote, Send } from 'lucide-react';
+import { CheckCircle, Calendar, CreditCard, Shield, Globe2, ChevronDown, Sparkles, MapPin, ArrowRight, Send } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import Footer from '@/components/wellness/Footer';
 import { PRICING } from '@/constants/pricing';
 import { PaytmLogo, WiseLogo, PayPalLogo, RemitlyLogo, WesternUnionLogo, SwiftLogo } from '@/components/BrandLogos';
+import paytmQrImage from '../../attached_assets/paytm.jpg';
 
 const SMOOTH = { duration: 0.6, ease: [0.16, 1, 0.3, 1] };
 const SMOOTH_SLOW = { duration: 0.65, ease: [0.16, 1, 0.3, 1] };
@@ -36,9 +38,35 @@ const SERVICES = [
 
 const FORMAT = ['In-person (Gurugram)', 'Online — WhatsApp', 'Online — Skype'];
 
-// UPI payment QR — encodes UPI deep-link; works with Google Pay / PhonePe / Paytm
-const UPI_QR = 'https://api.qrserver.com/v1/create-qr-code/?size=480x480&margin=12&data=' +
-  encodeURIComponent('upi://pay?pa=9819962635@paytm&pn=Vartika Shukla&cu=INR&tn=Quantum Healing Space');
+const UPI_QR = paytmQrImage;
+
+const SERVICE_ALIASES = {
+  reiki: 'Reiki Healing',
+  'reiki healing': 'Reiki Healing',
+  'deep chakra healing': 'Deep Chakra Healing',
+  'akashic records': 'Akashic Records',
+  'past life regression': 'Past Life Regression',
+  'angel therapy': 'Angel Therapy',
+  'ancestral healing': 'Ancestral Healing',
+  'emotional freedom technique': 'Emotional Freedom Technique (EFT)',
+  'emotional freedom technique eft': 'Emotional Freedom Technique (EFT)',
+  'sound therapy': 'Sound Therapy',
+  hypnosis: 'Hypnosis / Hypnotherapy',
+  hypnotherapy: 'Hypnosis / Hypnotherapy',
+  "ho'oponopono": "Ho'oponopono",
+  'ho’oponopono': "Ho'oponopono",
+  'other': 'Other / Not sure yet',
+  'other / not sure yet': 'Other / Not sure yet',
+};
+
+function normalizeService(value) {
+  return value
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .replace(/[^a-z0-9/'&\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 const inputStyle = {
   background: 'transparent',
@@ -81,7 +109,7 @@ function PaytmButton({ onClick, label = 'Continue with' }) {
     <button
       type="button"
       onClick={onClick}
-      className="group relative w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl overflow-hidden transition-all"
+      className="group relative w-full flex items-center justify-between gap-2.5 px-4 py-2.5 rounded-xl overflow-hidden transition-all"
       style={{
         background: '#fff',
         border: '1px solid rgba(0,46,110,0.18)',
@@ -90,13 +118,15 @@ function PaytmButton({ onClick, label = 'Continue with' }) {
         cursor: 'pointer',
       }}
     >
-      <span className="text-sm font-medium tracking-tight inline-flex items-center gap-2">
-        <PaytmLogo size={22} />
-        <span style={{ color: '#5b6b85' }}>{label}</span>
-        <span style={{ fontWeight: 700, color: '#002E6E', letterSpacing: '-0.01em' }}>Paytm</span>
+      <span className="inline-flex items-center gap-2 min-w-0">
+        <span className="text-[11px] sm:text-[11.5px] font-medium whitespace-nowrap" style={{ color: '#5b6b85', letterSpacing: '-0.01em' }}>
+          {label}
+        </span>
+        <span className="h-3.5 w-px" style={{ background: 'rgba(0, 46, 110, 0.2)' }} />
+        <PaytmLogo size={58} />
       </span>
       <span
-        className="ml-auto text-[10px] tracking-[0.25em] uppercase"
+        className="text-[8px] sm:text-[8.5px] tracking-[0.12em] uppercase whitespace-nowrap text-right"
         style={{ color: '#7a8aa8', fontFamily: "'JetBrains Mono', monospace" }}
       >
         UPI · Cards · Wallet
@@ -174,7 +204,7 @@ function InternationalRails() {
             Paying from outside India?
           </p>
           <p className="text-[12px] mt-1 font-light" style={{ color: 'var(--fg3)' }}>
-            5 international rails · all fund the same Paytm account
+            Wise live now · others coming soon
           </p>
         </div>
         <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.3 }}>
@@ -198,10 +228,14 @@ function InternationalRails() {
 
               <div className="space-y-2">
                 {INTL_RAILS.map((rail) => {
+                  const isEnabled = rail.name === 'Wise';
                   const Inner = (
                     <div
-                      className="group flex items-start gap-4 p-3.5 rounded-lg transition-all hover-surface"
-                      style={{ border: '1px solid var(--border)' }}
+                      className={`group relative flex items-start gap-4 p-3.5 rounded-lg transition-all ${isEnabled ? 'hover-surface' : ''}`}
+                      style={{
+                        border: '1px solid var(--border)',
+                        opacity: isEnabled ? 1 : 0.55,
+                      }}
                     >
                       <div className="flex-shrink-0 mt-0.5"><PaymentLogo name={rail.name} /></div>
                       <div className="flex-1 min-w-0">
@@ -223,16 +257,29 @@ function InternationalRails() {
                           {rail.detail}
                         </p>
                       </div>
-                      {rail.href && (
+                      {isEnabled && rail.href && (
                         <ArrowRight
                           className="w-4 h-4 flex-shrink-0 mt-1 transition-transform group-hover:translate-x-0.5"
                           style={{ color: 'var(--accent)' }}
                           strokeWidth={1.6}
                         />
                       )}
+                      {!isEnabled && (
+                        <div
+                          className="absolute inset-0 flex items-center justify-center rounded-lg"
+                          style={{ background: 'rgba(9, 12, 19, 0.62)' }}
+                        >
+                          <span
+                            className="px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase"
+                            style={{ background: 'var(--bg2)', color: 'var(--accent-text)', border: '1px solid var(--accent-soft)' }}
+                          >
+                            Coming Soon
+                          </span>
+                        </div>
+                      )}
                     </div>
                   );
-                  return rail.href ? (
+                  return isEnabled && rail.href ? (
                     <a key={rail.name} href={rail.href} target="_blank" rel="noopener noreferrer" className="block">
                       {Inner}
                     </a>
@@ -262,13 +309,32 @@ function InternationalRails() {
 }
 
 export default function Booking() {
+  const [searchParams] = useSearchParams();
   const [form, setForm] = useState({
     name: '', email: '', phone: '', country: 'India', service: '', format: '', startDate: '', endDate: '', notes: '',
   });
   const [submitted, setSubmitted] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [serviceAutoFilled, setServiceAutoFilled] = useState(false);
+
+  const serviceParam = (searchParams.get('service') || '').trim();
+
+  useEffect(() => {
+    if (!serviceParam || form.service) return;
+    const key = normalizeService(serviceParam);
+    const mapped =
+      SERVICE_ALIASES[key] ||
+      SERVICES.find((option) => normalizeService(option) === key);
+    if (!mapped) return;
+    setForm((prev) => ({ ...prev, service: mapped }));
+    setServiceAutoFilled(true);
+  }, [serviceParam, form.service]);
 
   const set = (k) => (e) => setForm(prev => ({ ...prev, [k]: e.target.value }));
+  const setService = (e) => {
+    setForm((prev) => ({ ...prev, service: e.target.value }));
+    setServiceAutoFilled(false);
+  };
   const isIndia = form.country === 'India';
 
   const handleSubmit = (e) => {
@@ -343,6 +409,34 @@ export default function Booking() {
               </div>
             ))}
           </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.8, delay: 0.45 }}
+            className="pointer-events-none absolute right-6 lg:right-16 top-1/2 -translate-y-1/2 hidden md:block"
+          >
+            <div
+              className="relative w-44 lg:w-56 aspect-[4/5] overflow-hidden rounded-2xl"
+              style={{ border: '1px solid var(--border2)', boxShadow: '0 16px 40px rgba(0, 0, 0, 0.28)' }}
+            >
+              <img
+                src="https://images.unsplash.com/photo-1556742111-a301076d9d18?w=900&q=80"
+                alt=""
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(9,12,18,0.8) 0%, rgba(9,12,18,0.22) 60%, transparent 100%)' }} />
+              <div
+                className="absolute bottom-3 left-3 right-3 px-3 py-2 rounded-lg flex items-center gap-2"
+                style={{ background: 'rgba(8, 11, 19, 0.78)', border: '1px solid rgba(255,255,255,0.16)' }}
+              >
+                <CreditCard className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} strokeWidth={1.7} />
+                <span className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'rgba(255,255,255,0.86)' }}>
+                  Secure checkout
+                </span>
+              </div>
+            </div>
+          </motion.div>
         </div>
       </div>
 
@@ -405,12 +499,35 @@ export default function Booking() {
               </div>
 
               <Field label="Healing Service / Retreat *">
-                <select required value={form.service} onChange={set('service')} style={{ ...inputStyle, cursor: 'pointer' }}>
-                  <option value="" disabled style={{ background: 'var(--bg2)' }}>Select a service...</option>
-                  {SERVICES.map(s => (
-                    <option key={s} value={s} style={{ background: 'var(--bg2)' }}>{s}</option>
-                  ))}
-                </select>
+                <div
+                  className="rounded-lg transition-all"
+                  style={serviceAutoFilled ? {
+                    background: 'linear-gradient(180deg, var(--accent-soft), transparent 78%)',
+                    border: '1px solid var(--accent-soft)',
+                    padding: '10px 12px 8px',
+                  } : undefined}
+                >
+                  <select
+                    required
+                    value={form.service}
+                    onChange={setService}
+                    style={{
+                      ...inputStyle,
+                      cursor: 'pointer',
+                      borderBottom: serviceAutoFilled ? '1px solid var(--accent)' : inputStyle.borderBottom,
+                    }}
+                  >
+                    <option value="" disabled style={{ background: 'var(--bg2)' }}>Select a service...</option>
+                    {SERVICES.map(s => (
+                      <option key={s} value={s} style={{ background: 'var(--bg2)' }}>{s}</option>
+                    ))}
+                  </select>
+                  {serviceAutoFilled && (
+                    <p className="text-[10px] tracking-[0.18em] uppercase mt-2" style={{ color: 'var(--accent-text)' }}>
+                      Auto-selected from service card
+                    </p>
+                  )}
+                </div>
               </Field>
 
               <Field label="Session Format *">
@@ -479,30 +596,52 @@ export default function Booking() {
                 <p className="hero-display text-2xl" style={{ color: 'var(--fg)' }}>{PRICING.consultation.international.label}</p>
               </div>
             </div>
-            <p className="text-[11px] font-light" style={{ color: 'var(--fg2)' }}>Fixed upfront · paid before the session is scheduled.</p>
+            <p className="text-[11px] font-light" style={{ color: 'var(--fg2)' }}>Fixed upfront · paid at checkout.</p>
           </div>
 
           {/* Treatment pricing card */}
           <div className="rounded-xl p-7" style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)' }}>
             <p className="text-[10px] tracking-[0.3em] uppercase mb-5" style={{ color: 'var(--fg3)' }}>◊ Treatment Pricing</p>
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
-                <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg2)' }}>India · 1st hour</span>
-                <span className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{PRICING.treatment.india.firstHour.label}</span>
+            <div className="space-y-3">
+              <div className="p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
+                <span className="text-[11px] tracking-[0.18em] uppercase mb-2 block" style={{ color: 'var(--fg2)' }}>India</span>
+                <div className="grid grid-cols-2 gap-2 min-w-0">
+                    <div className="rounded-md px-2.5 py-2" style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)' }}>
+                      <p className="text-[8.5px] tracking-[0.14em] uppercase whitespace-nowrap" style={{ color: 'var(--fg3)' }}>First hour</p>
+                      <p className="text-[14px] mt-1 font-semibold" style={{ color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>
+                        {PRICING.treatment.india.firstHour.label}
+                      </p>
+                    </div>
+                    <div className="rounded-md px-2.5 py-2" style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)' }}>
+                      <p className="text-[8.5px] tracking-[0.12em] uppercase whitespace-nowrap" style={{ color: 'var(--fg3)' }}>Additional / hr</p>
+                      <p className="text-[14px] mt-1 font-semibold" style={{ color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>
+                        {PRICING.treatment.india.subsequentHourly.label}
+                      </p>
+                    </div>
+                </div>
               </div>
-              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
-                <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg2)' }}>India · each additional hr</span>
-                <span className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{PRICING.treatment.india.subsequentHourly.label}</span>
-              </div>
-              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
-                <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg2)' }}>International · 1st hour</span>
-                <span className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{PRICING.treatment.international.firstHour.label}</span>
-              </div>
-              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
-                <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg2)' }}>International · each additional hr</span>
-                <span className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{PRICING.treatment.international.subsequentHourly.label}</span>
+
+              <div className="p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
+                <span className="text-[11px] tracking-[0.18em] uppercase mb-2 block" style={{ color: 'var(--fg2)' }}>Outside India</span>
+                <div className="grid grid-cols-2 gap-2 min-w-0">
+                    <div className="rounded-md px-2.5 py-2" style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)' }}>
+                      <p className="text-[8.5px] tracking-[0.14em] uppercase whitespace-nowrap" style={{ color: 'var(--fg3)' }}>First hour</p>
+                      <p className="text-[14px] mt-1 font-semibold" style={{ color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>
+                        {PRICING.treatment.international.firstHour.label}
+                      </p>
+                    </div>
+                    <div className="rounded-md px-2.5 py-2" style={{ background: 'var(--bg-elev)', border: '1px solid var(--border)' }}>
+                      <p className="text-[8.5px] tracking-[0.12em] uppercase whitespace-nowrap" style={{ color: 'var(--fg3)' }}>Additional / hr</p>
+                      <p className="text-[14px] mt-1 font-semibold" style={{ color: 'var(--fg)', fontVariantNumeric: 'tabular-nums' }}>
+                        {PRICING.treatment.international.subsequentHourly.label}
+                      </p>
+                    </div>
+                </div>
               </div>
             </div>
+            <p className="text-[10px] mt-3" style={{ color: 'var(--fg3)', letterSpacing: '0.08em' }}>
+              All treatment rates are per hour.
+            </p>
           </div>
 
           {/* Payment block */}
@@ -518,7 +657,7 @@ export default function Booking() {
 
             {/* Paytm — accepts UPI / Cards / Wallet for India, AND every international rail below ultimately funds the same Paytm account */}
             <PaytmButton onClick={() => setShowQr(s => !s)} label={isIndia ? 'Continue with' : 'Pay India-side via'} />
-            <p className="mt-3 text-[10px] tracking-[0.18em] uppercase text-center" style={{ color: 'var(--fg3)' }}>
+            <p className="mt-2 text-[9px] tracking-[0.14em] uppercase text-center" style={{ color: 'var(--fg3)' }}>
               Trusted by 350M+ Indians · Receives global rails
             </p>
 
@@ -541,13 +680,13 @@ export default function Booking() {
                 >
                   <div className="mt-6 pt-6 flex flex-col items-center gap-3" style={{ borderTop: '1px solid var(--border)' }}>
                     <div className="p-4 rounded-lg" style={{ background: '#fff' }}>
-                      <img src={UPI_QR} alt="Paytm UPI QR — Vartika Shukla" className="w-44 h-44 block" />
+                      <img src={UPI_QR} alt="Paytm UPI QR — Vartika Shukla" className="w-52 max-w-full h-auto block" />
                     </div>
                     <p className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg2)' }}>
                       Scan with Paytm / GPay / PhonePe
                     </p>
                     <p className="text-[10px] font-mono opacity-50" style={{ color: 'var(--fg3)' }}>
-                      9819962635@paytm
+                      9819962635@ptyes
                     </p>
                   </div>
                 </motion.div>
@@ -593,10 +732,15 @@ export default function Booking() {
               href="https://wa.me/919267904256"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-light block mb-2 hover:opacity-70 transition-opacity"
+              className="text-sm font-light inline-flex items-center gap-2.5 mb-2 hover:opacity-70 transition-opacity"
               style={{ color: 'var(--accent-text)' }}
             >
-              WhatsApp · +91 9267904256 →
+              <img
+                src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/960px-WhatsApp.svg.png?_=20220228223904"
+                alt="WhatsApp"
+                className="w-4 h-4 rounded-sm"
+              />
+              <span>WhatsApp · +91 9267904256 →</span>
             </a>
             <a
               href="mailto:vartikashukla@xyz.com"

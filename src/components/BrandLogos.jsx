@@ -3,14 +3,13 @@
 import React from 'react';
 
 export function PaytmLogo({ size = 24 }) {
+  const width = typeof size === 'number' ? `${size}px` : size;
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-label="Paytm">
-      <circle cx="12" cy="12" r="11" fill="#00BAF2" />
-      <path
-        d="M9.2 6.8h3.5c1.85 0 3.3 1.45 3.3 3.3s-1.45 3.3-3.3 3.3h-1.7v3.8H9.2V6.8zm2 1.8v3.0h1.4c.83 0 1.5-.67 1.5-1.5s-.67-1.5-1.5-1.5h-1.4z"
-        fill="#fff"
-      />
-    </svg>
+    <img
+      src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/Paytm_Logo_%28standalone%29.svg/1920px-Paytm_Logo_%28standalone%29.svg.png?_=20200830180423"
+      alt="Paytm"
+      style={{ width, height: 'auto', display: 'block', objectFit: 'contain' }}
+    />
   );
 }
 

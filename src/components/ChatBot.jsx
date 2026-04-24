@@ -29,7 +29,7 @@ const FAQ = [
   },
   {
     patterns: ['price', 'cost', 'charge', 'fee', 'how much', 'rate'],
-    reply: "Consultation: ₹2,500 (India) · $50 USD (outside India) — fixed upfront.\nTreatment (India): ₹5,000 first hour + ₹3,000 per additional hour.\nTreatment (International): $110 USD first hour + $70 USD per additional hour.\nDistance sessions require full payment 24 hrs in advance."
+    reply: "Consultation: ₹2,500 (India) · $50 (outside India) — fixed upfront.\nTreatment (India): ₹5,000 first hour + ₹3,000 per additional hour.\nTreatment (International): $110 first hour + $70 per additional hour.\nDistance sessions require full payment 24 hrs in advance."
   },
   {
     patterns: ['book', 'appointment', 'schedule', 'session', 'register'],

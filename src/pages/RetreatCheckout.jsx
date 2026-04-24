@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   CheckCircle, Calendar, MapPin, Clock, ArrowLeft, ArrowRight, Shield, Sparkles, Globe2,
   ChevronDown, MessageCircle, Send,
@@ -92,11 +92,24 @@ const INTL_RAILS = [
 
 export default function RetreatCheckout() {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
   const retreat = findRetreat(slug);
+  const source = (searchParams.get('source') || '').toLowerCase();
+  const phase = (searchParams.get('phase') || '').trim();
+  const stage = (searchParams.get('stage') || '').trim();
+  const fromTranscendence = source === 'transcendence';
+  const transcendenceContext = [phase, stage].filter(Boolean).join(' · ');
+
   const [country, setCountry] = useState('India');
   const [form, setForm] = useState({ name: '', email: '', phone: '', startDate: '', notes: '' });
   const [submitted, setSubmitted] = useState(false);
   const [intlOpen, setIntlOpen] = useState(false);
+
+  useEffect(() => {
+    if (!fromTranscendence || form.notes) return;
+    const contextText = transcendenceContext ? `From Transcendence Rituals — ${transcendenceContext}.` : 'From Transcendence Rituals.';
+    setForm((prev) => ({ ...prev, notes: contextText }));
+  }, [fromTranscendence, transcendenceContext, form.notes]);
 
   if (!retreat) {
     return (
@@ -117,6 +130,8 @@ export default function RetreatCheckout() {
     e.preventDefault();
     const body = [
       `Retreat: ${retreat.name}`,
+      fromTranscendence ? 'Source: Transcendence Rituals' : null,
+      fromTranscendence && transcendenceContext ? `Phase: ${transcendenceContext}` : null,
       `Location: ${retreat.location}`,
       `Country: ${country}`,
       `Name: ${form.name}`,
@@ -124,7 +139,7 @@ export default function RetreatCheckout() {
       `Phone: ${form.phone}`,
       `Preferred Start: ${form.startDate}`,
       `Notes: ${form.notes || 'None'}`,
-    ].join('%0A');
+    ].filter(Boolean).join('%0A');
     window.open(
       `mailto:vartikashukla@xyz.com?subject=${encodeURIComponent(`Retreat Booking — ${retreat.name}`)}&body=${body}`,
     );
@@ -185,6 +200,17 @@ export default function RetreatCheckout() {
           <p className="text-[10px] tracking-[0.4em] uppercase mb-3" style={{ color: 'var(--accent-text)' }}>
             ◊ Reserve Your Spot
           </p>
+          {fromTranscendence && (
+            <div
+              className="mb-6 inline-flex items-center gap-2 px-3.5 py-2 rounded-full"
+              style={{ background: 'var(--accent-dim)', border: '1px solid var(--accent-soft)' }}
+            >
+              <Sparkles className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} strokeWidth={1.7} />
+              <span className="text-[10px] tracking-[0.18em] uppercase" style={{ color: 'var(--accent-text)' }}>
+                Transcendence Rituals {transcendenceContext ? `· ${transcendenceContext}` : ''}
+              </span>
+            </div>
+          )}
           <h2 className="hero-display text-3xl lg:text-4xl mb-10" style={{ color: 'var(--fg)' }}>
             A few details, then Vartika confirms personally.
           </h2>

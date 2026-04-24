@@ -40,27 +40,47 @@ const phases = [
   },
 ];
 
-/* Compact mandala motif — Hindu-Rituals styling, theme-aware */
+/* Minimal transcendence mandala motif */
 function Mandala({ size = 320, reverse = false, color = 'var(--accent)' }) {
-  const cx = 100, cy = 100;
+  const cx = 100;
+  const cy = 100;
   return (
     <svg
       viewBox="0 0 200 200"
       width={size}
       height={size}
       className={reverse ? 'mandala-rotate-rev' : 'mandala-rotate'}
-      style={{ opacity: 0.18 }}
+      style={{ opacity: 0.16 }}
+      aria-hidden="true"
     >
-      <g fill="none" stroke={color} strokeWidth="0.6">
-        <circle cx={cx} cy={cy} r="92" />
-        <circle cx={cx} cy={cy} r="68" />
-        <circle cx={cx} cy={cy} r="44" />
-        {Array.from({ length: 12 }).map((_, i) => (
-          <line key={i} x1={cx} y1={cy - 92} x2={cx} y2={cy - 44} transform={`rotate(${i * 30} ${cx} ${cy})`} />
-        ))}
-        {[0, 60, 120, 180, 240, 300].map((rot, i) => (
-          <polygon key={i} points="100,55 75,135 125,135" transform={`rotate(${rot} ${cx} ${cy})`} />
-        ))}
+      <g fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round">
+        <g strokeWidth="0.9" opacity="0.9">
+          {[90, 62, 34].map((r) => (
+            <circle key={`ring-${r}`} cx={cx} cy={cy} r={r} />
+          ))}
+        </g>
+
+        <g strokeWidth="0.75" opacity="0.62">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <line
+              key={`spoke-${i}`}
+              x1={cx}
+              y1={cy - 90}
+              x2={cx}
+              y2={cy - 34}
+              transform={`rotate(${i * 45} ${cx} ${cy})`}
+            />
+          ))}
+        </g>
+
+        <g strokeWidth="1.2" opacity="0.7">
+          <path d="M100 10 A90 90 0 0 1 190 100" />
+          <path d="M100 190 A90 90 0 0 1 10 100" />
+        </g>
+
+        <g strokeWidth="1" opacity="0.78">
+          <circle cx={cx} cy={cy} r="9" />
+        </g>
       </g>
     </svg>
   );
@@ -71,6 +91,8 @@ export default function TranscendenceRituals() {
   const [activePhase, setActivePhase] = useState(0);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
+  const currentPhase = phases[activePhase];
+  const phaseCheckoutUrl = `/retreats/spiritual-healing-retreat/book?source=transcendence&phase=${encodeURIComponent(currentPhase.phase)}&stage=${encodeURIComponent(currentPhase.title)}`;
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh', color: 'var(--fg)' }}>
@@ -191,26 +213,26 @@ export default function TranscendenceRituals() {
               >
                 <div className="aspect-[16/10] overflow-hidden mb-10 rounded-sm relative">
                   <img
-                    src={phases[activePhase].image}
-                    alt={phases[activePhase].title}
+                    src={currentPhase.image}
+                    alt={currentPhase.title}
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 mix-blend-overlay pointer-events-none" style={{ background: 'linear-gradient(135deg, var(--accent-soft), transparent 60%)' }} />
                 </div>
                 <p className="text-xs tracking-[0.4em] uppercase mb-4" style={{ color: 'var(--accent-text)' }}>
-                  {phases[activePhase].phase}
+                  {currentPhase.phase}
                 </p>
                 <h2 className="hero-display text-4xl mb-6" style={{ color: 'var(--fg)' }}>
-                  {phases[activePhase].title}
+                  {currentPhase.title}
                 </h2>
                 <p className="font-light leading-relaxed text-[15px] max-w-lg" style={{ color: 'var(--fg2)' }}>
-                  {phases[activePhase].description}
+                  {currentPhase.description}
                 </p>
                 <Link
-                  to="/booking"
+                  to={phaseCheckoutUrl}
                   className="mt-10 inline-flex items-center gap-2 text-sm tracking-widest uppercase transition-colors duration-300 expand-link"
                 >
-                  Inquire About This Phase →
+                  Continue to Retreat Checkout →
                 </Link>
               </motion.div>
             </AnimatePresence>
