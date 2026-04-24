@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Film, Image as ImageIcon, Layers, Instagram, ExternalLink } from 'lucide-react';
+import { apiUrl } from '@/utils';
 
 const FALLBACK_HANDLE = 'quantum_healingspace';
 
@@ -146,7 +147,7 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/instagram/reels?limit=12')
+    fetch(apiUrl('/api/instagram/reels?limit=12'))
       .then(async (r) => {
         if (!r.ok) {
           const body = await r.json().catch(() => ({}));

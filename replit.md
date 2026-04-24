@@ -36,6 +36,11 @@ Required environment secrets:
 - `ADMIN_PASSWORD` — required to enable the admin dashboard at `/admin`
 - `ADMIN_TOKEN_SECRET` (optional) — extra HMAC pepper for admin tokens
 
+Frontend API target:
+- `VITE_API_BASE_URL` (optional) — base origin for API requests.
+  - Default: `https://qhs.onrender.com`
+  - Example local override: `VITE_API_BASE_URL=http://127.0.0.1:8000`
+
 ## Project Structure
 ```
 ├── backend/

@@ -1,3 +1,5 @@
+import { apiUrl } from '@/utils';
+
 const TOKEN_KEY = 'qhs_admin_token';
 
 export function getToken() {
@@ -24,13 +26,14 @@ async function parseError(res) {
 
 export async function apiFetch(path, { method = 'GET', body, headers = {}, raw = false } = {}) {
   const token = getToken();
+  const requestUrl = /^https?:\/\//i.test(path) ? path : apiUrl(path);
   const finalHeaders = { ...headers };
   if (body !== undefined && !(body instanceof FormData)) {
     finalHeaders['Content-Type'] = 'application/json';
   }
   if (token) finalHeaders['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(path, {
+  const res = await fetch(requestUrl, {
     method,
     headers: finalHeaders,
     body: body !== undefined ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,

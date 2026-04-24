@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, ArrowRight, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { apiUrl } from '@/utils';
 
 export default function NewsletterSignup() {
   const [email, setEmail] = useState('');
@@ -19,7 +20,7 @@ export default function NewsletterSignup() {
     setState('loading');
     setMessage('');
     try {
-      const r = await fetch('/api/newsletter/subscribe', {
+      const r = await fetch(apiUrl('/api/newsletter/subscribe'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: trimmed, source: 'footer' }),

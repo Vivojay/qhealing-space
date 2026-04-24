@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Download, Trash2, Search, RefreshCw, Loader2, AlertCircle, Mail } from 'lucide-react';
 import { adminApi, getToken } from './api';
+import { apiUrl } from '@/utils';
 
 function fmtDate(s) {
   if (!s) return '—';
@@ -47,7 +48,7 @@ export default function AdminNewsletter() {
     try {
       // Use a fetch with auth header, then trigger download
       const token = getToken();
-      const res = await fetch('/api/admin/newsletter/export', {
+      const res = await fetch(apiUrl('/api/admin/newsletter/export'), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
