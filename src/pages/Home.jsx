@@ -207,22 +207,18 @@ export default function Home() {
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.85, delay: 0.42 }}
-              className="mb-6"
+              className="mb-6 lg:mt-[-14vh]"
             >
-              <div
-                className="w-20 h-24 lg:w-24 lg:h-28 overflow-hidden"
+              <img
+                src={heroMeImage}
+                alt="Portrait of Vartika Shukla"
+                className="block h-24 w-auto object-cover lg:h-[clamp(220px,28vh,300px)]"
                 style={{
                   border: '1px solid var(--border2)',
                   boxShadow: '0 12px 36px rgba(0,0,0,0.28)',
                   background: 'var(--bg2)',
                 }}
-              >
-                <img
-                  src={heroMeImage}
-                  alt="Portrait of Vartika Shukla"
-                  className="w-full h-full object-cover"
-                />
-              </div>
+              />
             </motion.div>
             <motion.p
               initial={{ opacity: 0, y: 12 }}
