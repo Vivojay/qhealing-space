@@ -69,7 +69,7 @@ const navItems = [
 export default function Layout({ children }) {
   const [expanded, setExpanded] = useState(false);
   const location = useLocation();
-  const { toggleTheme } = useTheme();
+  const { isDark, toggleTheme } = useTheme();
 
   // Auto-collapse the sidebar whenever the route changes (mobile-friendly)
   useEffect(() => { setExpanded(false); }, [location.pathname]);
