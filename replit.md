@@ -45,6 +45,7 @@ Required environment secrets:
 - `ADMIN_TOKEN_SECRET` (optional) — extra HMAC pepper for admin tokens
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` (required for client/admin transactional email + token warning mail)
 - `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` (required for daily token-expiry warning checks via `debug_token`)
+- For scale/deliverability, migrate SMTP to a transactional provider (Resend/SendGrid/Postmark); note: admin alert recipient is currently hardcoded to `vartikashukla2000@yahoo.com` in `backend/main.py:69`.
 
 Frontend API target:
 - `VITE_API_BASE_URL` (optional) — base origin for API requests.

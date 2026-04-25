@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
 import {
+  ArrowUpRight,
   CheckCircle2,
   Clock3,
   ImagePlus,
@@ -29,6 +31,111 @@ const WAIT_NOTICE = 'Please wait for our reply (this may take up to 24 hours).';
 const INSTANT_FEE_LABEL = '₹1,500';
 const INSTANT_FEE_AMOUNT = 1500;
 const PAYMENT_QR_SRC = apiUrl('/api/payments/upi-qr?amount=1500');
+
+const REQUESTED_CONSULT_TYPES = [
+  {
+    id: 'grabovoy-codes',
+    legacyTypeId: 'career-abundance',
+    label: 'Grabovoy Codes',
+    description: 'Numeric sequence guidance for healing intentions, restoration targets, and manifestation alignment.',
+    accent: '#3E63AE',
+    images: [
+      {
+        place: 'Sequence Grid Journal',
+        src: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&q=85',
+      },
+      {
+        place: 'Focused Number Meditation',
+        src: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&q=85',
+      },
+    ],
+  },
+  {
+    id: 'sigil-witchcraft',
+    legacyTypeId: 'spiritual-direction',
+    label: 'Sigil Witchcraft',
+    description: 'Personal sigil design, charging rituals, and symbolic intention work for precise outcomes.',
+    accent: '#8A3A6D',
+    images: [
+      {
+        place: 'Sigil Ritual Desk',
+        src: 'https://images.unsplash.com/photo-1540206395-68808572332f?w=1200&q=85',
+      },
+      {
+        place: 'Candle Charge Window',
+        src: 'https://images.unsplash.com/photo-1514516816566-de580c8f76b9?w=1200&q=85',
+      },
+    ],
+  },
+  {
+    id: 'angel-cards',
+    legacyTypeId: 'relationship-clarity',
+    label: 'Angel Cards',
+    description: 'Angel card spreads for reassurance, heart-led direction, and immediate intuitive clarity.',
+    accent: '#B67A2A',
+    images: [
+      {
+        place: 'Card Pull Session',
+        src: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=1200&q=85',
+      },
+      {
+        place: 'Guidance and Light',
+        src: 'https://images.unsplash.com/photo-1604079628040-94301bb21b91?w=1200&q=85',
+      },
+    ],
+  },
+  {
+    id: 'dowsing',
+    legacyTypeId: 'health-energy',
+    label: 'Dowsing',
+    description: 'Pendulum and chart-based dowsing for energetic diagnostics, yes-no clarity, and alignment checks.',
+    accent: '#1B7B70',
+    images: [
+      {
+        place: 'Pendulum Inquiry',
+        src: 'https://images.unsplash.com/photo-1528360983277-13d401cdc186?w=1200&q=85',
+      },
+      {
+        place: 'Subtle Energy Scan',
+        src: 'https://images.unsplash.com/photo-1591348122449-02525d70379b?w=1200&q=85',
+      },
+    ],
+  },
+  {
+    id: 'runes',
+    legacyTypeId: 'spiritual-direction',
+    label: 'Runes',
+    description: 'Rune casting and interpretation for decision timing, energetic protection, and spiritual mapping.',
+    accent: '#5D713F',
+    images: [
+      {
+        place: 'Rune Cast Layout',
+        src: 'https://images.unsplash.com/photo-1531171596281-8b5d26917d8b?w=1200&q=85',
+      },
+      {
+        place: 'Symbolic Guidance Path',
+        src: 'https://images.unsplash.com/photo-1519834785169-98be25ec3f84?w=1200&q=85',
+      },
+    ],
+  },
+  {
+    id: 'switchwords',
+    legacyTypeId: 'career-abundance',
+    label: 'Switchwords',
+    description: 'Targeted switchword combinations for quick subconscious shifts and repeated intention activation.',
+    accent: '#B3543C',
+    images: [
+      {
+        place: 'Switchword Journal',
+        src: 'https://images.unsplash.com/photo-1499209974431-9dddcece7f88?w=1200&q=85',
+      },
+      {
+        place: 'Affirmation Practice Flow',
+        src: 'https://images.unsplash.com/photo-1545389336-cf090694435e?w=1200&q=85',
+      },
+    ],
+  },
+];
 
 function statusPill(status) {
   const normalized = String(status || 'new').toLowerCase();
@@ -70,8 +177,13 @@ async function parseApiError(res) {
 }
 
 export default function InstantConsult() {
-  const [types, setTypes] = useState([]);
-  const [selectedTypeId, setSelectedTypeId] = useState('');
+  const [searchParams] = useSearchParams();
+  const onboardingCardRef = useRef(null);
+  const paymentCardRef = useRef(null);
+
+  const [types] = useState(REQUESTED_CONSULT_TYPES);
+  const [selectedTypeId, setSelectedTypeId] = useState(REQUESTED_CONSULT_TYPES[0]?.id || '');
+  const [typeSubmissionMode, setTypeSubmissionMode] = useState('modern');
 
   const [authUser, setAuthUser] = useState(null);
   const [idToken, setIdToken] = useState('');
@@ -98,7 +210,45 @@ export default function InstantConsult() {
     [types, selectedTypeId],
   );
 
+  const requestedMode = useMemo(
+    () => String(searchParams.get('mode') || '').trim().toLowerCase(),
+    [searchParams],
+  );
+
   const consultAccent = selectedType?.accent || 'var(--accent)';
+
+  const bringPanelIntoView = useCallback((panel) => {
+    const target = panel === 'signup' ? onboardingCardRef.current : paymentCardRef.current;
+    if (!target) return;
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    if (typeof window === 'undefined') return;
+    window.setTimeout(() => {
+      const focusNode = target.querySelector('input, textarea') || target.querySelector('button');
+      if (focusNode && typeof focusNode.focus === 'function') {
+        focusNode.focus({ preventScroll: true });
+      }
+    }, panel === 'signup' ? 260 : 220);
+  }, []);
+
+  const nudgeSignup = useCallback(() => {
+    setAuthMode('signup');
+    setAuthError('');
+    bringPanelIntoView('signup');
+  }, [bringPanelIntoView]);
+
+  const nudgePayment = useCallback(() => {
+    bringPanelIntoView('payment');
+  }, [bringPanelIntoView]);
+
+  useEffect(() => {
+    if (requestedMode !== 'signup' || authUser) return;
+    const timer = setTimeout(() => {
+      nudgeSignup();
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [requestedMode, authUser, nudgeSignup]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,13 +259,14 @@ export default function InstantConsult() {
       })
       .then((payload) => {
         if (cancelled) return;
-        const next = payload?.data || [];
-        setTypes(next);
-        if (next.length && !selectedTypeId) setSelectedTypeId(next[0].id);
+        const remote = Array.isArray(payload?.data) ? payload.data : [];
+        const remoteIds = new Set(remote.map((item) => item?.id).filter(Boolean));
+        const supportsModernIds = REQUESTED_CONSULT_TYPES.every((item) => remoteIds.has(item.id));
+        setTypeSubmissionMode(supportsModernIds ? 'modern' : 'legacy');
       })
-      .catch((err) => {
+      .catch(() => {
         if (cancelled) return;
-        setSendError(err.message || 'Failed to load consult types.');
+        setTypeSubmissionMode('legacy');
       });
     return () => {
       cancelled = true;
@@ -295,6 +446,12 @@ export default function InstantConsult() {
     setSending(true);
     setSendError('');
     setSendNotice('');
+
+    const resolvedTypeId =
+      typeSubmissionMode === 'legacy'
+        ? (selectedType.legacyTypeId || selectedType.id)
+        : selectedType.id;
+
     try {
       const res = await fetch(apiUrl('/api/consult/messages'), {
         method: 'POST',
@@ -303,7 +460,7 @@ export default function InstantConsult() {
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          type_id: selectedType.id,
+          type_id: resolvedTypeId,
           question,
           payment_reference: paymentReference.trim(),
           payment_amount: INSTANT_FEE_AMOUNT,
@@ -326,6 +483,9 @@ export default function InstantConsult() {
   };
 
   const chatLocked = !authUser || !paymentUnlocked;
+  const lockPromptAction = !authUser ? nudgeSignup : nudgePayment;
+  const lockPromptLabel = !authUser ? 'Signup Required' : 'Payment Required';
+  const lockPromptHint = !authUser ? 'Tap to start signup' : 'Tap to complete payment';
 
   return (
     <div style={{ background: 'var(--bg)' }}>
@@ -342,6 +502,19 @@ export default function InstantConsult() {
           <p className="mt-6 max-w-3xl text-sm lg:text-[15px] font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
             This is a dedicated paid consult channel (separate from quick chat). Every message is reviewed personally and answered with clear text plus curated supporting images.
           </p>
+          {!authUser && (
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={nudgeSignup}
+                className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[10px] tracking-[0.22em] uppercase"
+                style={{ background: 'var(--special-accent)', color: '#fff' }}
+              >
+                Sign up to unlock chat
+                <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={1.9} />
+              </button>
+            </div>
+          )}
           <div
             className="mt-7 inline-flex items-center gap-2 rounded-full px-4 py-2"
             style={{ background: 'var(--special-bg)', border: '1px solid var(--special-border)', color: 'var(--special-accent)' }}
@@ -422,7 +595,7 @@ export default function InstantConsult() {
                 </p>
               </div>
             ) : !authUser ? (
-              <div className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
+              <div ref={onboardingCardRef} className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
                 <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Onboarding</p>
                 <h3 className="text-2xl mt-2" style={{ color: 'var(--fg)' }}>Sign up to unlock Instant Consult</h3>
                 <div className="mt-4 flex gap-2">
@@ -507,7 +680,7 @@ export default function InstantConsult() {
                 )}
               </div>
             ) : (
-              <div className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
+              <div ref={paymentCardRef} className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
                 <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Payment Gate</p>
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <div>
@@ -702,12 +875,24 @@ export default function InstantConsult() {
                     className="absolute inset-0 flex items-center justify-center px-6"
                     style={{ background: 'rgba(10, 14, 21, 0.24)' }}
                   >
-                    <div className="w-40 h-40 rounded-full flex flex-col items-center justify-center text-center" style={{ border: `1px solid ${!authUser ? 'var(--special-border)' : consultAccent}`, background: 'rgba(12, 18, 28, 0.55)', backdropFilter: 'blur(4px)' }}>
+                    <button
+                      type="button"
+                      onClick={lockPromptAction}
+                      className="orbit-circle-cta w-40 h-40 rounded-full flex flex-col items-center justify-center text-center"
+                      style={{
+                        '--orbit-ring': !authUser ? 'var(--special-accent)' : consultAccent,
+                        border: `1px solid ${!authUser ? 'var(--special-border)' : `${consultAccent}88`}`,
+                        background: 'rgba(12, 18, 28, 0.55)',
+                        backdropFilter: 'blur(4px)',
+                      }}
+                      aria-label={lockPromptHint}
+                    >
                       {!authUser ? <Lock className="w-7 h-7" style={{ color: 'var(--special-accent)' }} strokeWidth={1.7} /> : <WalletCards className="w-7 h-7" style={{ color: consultAccent }} strokeWidth={1.7} />}
                       <p className="text-[10px] tracking-[0.2em] uppercase mt-3" style={{ color: !authUser ? 'var(--special-accent)' : consultAccent }}>
-                        {!authUser ? 'Signup Required' : 'Paywall'}
+                        {lockPromptLabel}
                       </p>
-                    </div>
+                      <p className="text-[9px] mt-1.5" style={{ color: 'var(--fg2)' }}>{lockPromptHint}</p>
+                    </button>
                   </motion.div>
                 )}
               </AnimatePresence>

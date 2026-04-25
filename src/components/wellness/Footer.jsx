@@ -85,6 +85,17 @@ export default function Footer() {
               >
                 Book a session <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={2} />
               </Link>
+              <Link
+                to="/instant-consult?mode=signup"
+                className="mt-3 inline-flex items-center gap-2 px-6 py-3 rounded-full text-xs tracking-[0.2em] uppercase hover-accent"
+                style={{
+                  border: '1px solid var(--special-border)',
+                  color: 'var(--special-accent)',
+                  background: 'var(--special-bg)',
+                }}
+              >
+                Sign Up Instant Consult <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={2} />
+              </Link>
             </motion.div>
           </div>
 

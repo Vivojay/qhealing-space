@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Leaf, Sun, Moon, Globe } from 'lucide-react';
+import { X, Leaf, Sun, Moon, Globe, UserPlus } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import ChatBot from '@/components/ChatBot';
 
@@ -70,6 +70,7 @@ export default function Layout({ children }) {
   const [expanded, setExpanded] = useState(false);
   const location = useLocation();
   const { isDark, toggleTheme } = useTheme();
+  const instantSignupHref = `${createPageUrl('Instant Consult')}?mode=signup`;
 
   // Auto-collapse the sidebar whenever the route changes (mobile-friendly)
   useEffect(() => { setExpanded(false); }, [location.pathname]);
@@ -173,6 +174,39 @@ export default function Layout({ children }) {
             );
           })}
         </nav>
+
+        <div className="px-2 pb-3">
+          <Link
+            to={instantSignupHref}
+            onClick={() => setExpanded(false)}
+            className="group relative flex items-center gap-3 rounded-full px-2 py-2.5"
+            style={{
+              border: '1px solid var(--special-border)',
+              background: 'var(--special-bg)',
+              color: 'var(--special-accent)',
+            }}
+          >
+            <span
+              className="w-7 h-7 rounded-full inline-flex items-center justify-center flex-shrink-0"
+              style={{ border: '1px solid var(--special-border)', background: 'var(--special-bg-active)' }}
+            >
+              <UserPlus className="w-3.5 h-3.5" strokeWidth={1.8} />
+            </span>
+            <AnimatePresence>
+              {expanded && (
+                <motion.span
+                  initial={{ opacity: 0, x: -6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -6 }}
+                  transition={{ duration: 0.25 }}
+                  className="text-[11px] tracking-[0.18em] uppercase whitespace-nowrap"
+                >
+                  Sign Up Instant Consult
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </Link>
+        </div>
 
         {/* Bottom — connect block */}
         <div className="p-4" style={{ borderTop: '1px solid var(--border)' }}>

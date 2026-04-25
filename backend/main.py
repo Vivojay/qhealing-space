@@ -81,66 +81,98 @@ CONSULT_STATUS_VALUES: tuple[str, ...] = ("new", "inprogress", "done")
 
 CONSULT_TYPES: list[dict[str, Any]] = [
     {
-        "id": "relationship-clarity",
-        "label": "Relationship Clarity",
-        "description": "Questions around emotional patterns, family dynamics, and relationship healing.",
-        "accent": "#BC4C4C",
+        "id": "grabovoy-codes",
+        "label": "Grabovoy Codes",
+        "description": "Numeric sequence guidance for healing intentions, restoration targets, and manifestation alignment.",
+        "accent": "#3E63AE",
         "images": [
             {
-                "place": "Rishikesh",
-                "src": "https://images.unsplash.com/photo-1593693411515-c20261bcad6e?w=1200&q=85",
+                "place": "Sequence Grid Journal",
+                "src": "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&q=85",
             },
             {
-                "place": "Delhi",
-                "src": "https://images.unsplash.com/photo-1474552226712-ac0f0961a954?w=1200&q=85",
+                "place": "Focused Number Meditation",
+                "src": "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&q=85",
             },
         ],
     },
     {
-        "id": "career-abundance",
-        "label": "Career & Abundance",
-        "description": "Guidance for work stress, money blocks, business decisions, and aligned growth.",
-        "accent": "#93581F",
+        "id": "sigil-witchcraft",
+        "label": "Sigil Witchcraft",
+        "description": "Personal sigil design, charging rituals, and symbolic intention work for precise outcomes.",
+        "accent": "#8A3A6D",
         "images": [
             {
-                "place": "Mumbai",
-                "src": "https://images.unsplash.com/photo-1548013146-72479768bada?w=1200&q=85",
+                "place": "Sigil Ritual Desk",
+                "src": "https://images.unsplash.com/photo-1540206395-68808572332f?w=1200&q=85",
             },
             {
-                "place": "Bengaluru",
-                "src": "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1200&q=85",
+                "place": "Candle Charge Window",
+                "src": "https://images.unsplash.com/photo-1514516816566-de580c8f76b9?w=1200&q=85",
             },
         ],
     },
     {
-        "id": "health-energy",
-        "label": "Health & Energy",
-        "description": "Energetic scan for fatigue, recurring patterns, and mind-body balancing insights.",
-        "accent": "#0F7E77",
+        "id": "angel-cards",
+        "label": "Angel Cards",
+        "description": "Angel card spreads for reassurance, heart-led direction, and immediate intuitive clarity.",
+        "accent": "#B67A2A",
         "images": [
             {
-                "place": "Gurugram",
-                "src": "https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=1200&q=85",
-            },
-            {
-                "place": "Pune",
+                "place": "Card Pull Session",
                 "src": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=1200&q=85",
             },
+            {
+                "place": "Guidance and Light",
+                "src": "https://images.unsplash.com/photo-1604079628040-94301bb21b91?w=1200&q=85",
+            },
         ],
     },
     {
-        "id": "spiritual-direction",
-        "label": "Spiritual Direction",
-        "description": "For intuitive confusion, karmic insights, purpose direction, and ritual pathways.",
-        "accent": "#5C2A88",
+        "id": "dowsing",
+        "label": "Dowsing",
+        "description": "Pendulum and chart-based dowsing for energetic diagnostics, yes-no clarity, and alignment checks.",
+        "accent": "#1B7B70",
         "images": [
             {
-                "place": "Varanasi",
-                "src": "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=1200&q=85",
+                "place": "Pendulum Inquiry",
+                "src": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?w=1200&q=85",
             },
             {
-                "place": "Haridwar",
-                "src": "https://images.unsplash.com/photo-1518002054494-3a6f94352e9d?w=1200&q=85",
+                "place": "Subtle Energy Scan",
+                "src": "https://images.unsplash.com/photo-1591348122449-02525d70379b?w=1200&q=85",
+            },
+        ],
+    },
+    {
+        "id": "runes",
+        "label": "Runes",
+        "description": "Rune casting and interpretation for decision timing, energetic protection, and spiritual mapping.",
+        "accent": "#5D713F",
+        "images": [
+            {
+                "place": "Rune Cast Layout",
+                "src": "https://images.unsplash.com/photo-1531171596281-8b5d26917d8b?w=1200&q=85",
+            },
+            {
+                "place": "Symbolic Guidance Path",
+                "src": "https://images.unsplash.com/photo-1519834785169-98be25ec3f84?w=1200&q=85",
+            },
+        ],
+    },
+    {
+        "id": "switchwords",
+        "label": "Switchwords",
+        "description": "Targeted switchword combinations for quick subconscious shifts and repeated intention activation.",
+        "accent": "#B3543C",
+        "images": [
+            {
+                "place": "Switchword Journal",
+                "src": "https://images.unsplash.com/photo-1499209974431-9dddcece7f88?w=1200&q=85",
+            },
+            {
+                "place": "Affirmation Practice Flow",
+                "src": "https://images.unsplash.com/photo-1545389336-cf090694435e?w=1200&q=85",
             },
         ],
     },

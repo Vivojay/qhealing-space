@@ -245,6 +245,13 @@ export default function Home() {
               className="flex gap-3 flex-wrap"
             >
               <Link
+                to={`${createPageUrl('Instant Consult')}?mode=signup`}
+                className="px-7 py-3 text-xs tracking-widest uppercase transition-opacity hover:opacity-75"
+                style={{ background: 'var(--special-accent)', color: '#fff' }}
+              >
+                Sign Up Instant Consult
+              </Link>
+              <Link
                 to="/healings"
                 className="px-7 py-3 text-xs tracking-widest uppercase transition-opacity hover:opacity-70"
                 style={{ background: 'var(--fg)', color: 'var(--bg)' }}
