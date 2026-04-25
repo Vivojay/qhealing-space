@@ -5,6 +5,19 @@ import { apiUrl } from '@/utils';
 
 const FALLBACK_HANDLE = 'quantum_healingspace';
 
+function normalizeInstagramError(message) {
+  const raw = String(message || '').trim();
+  if (!raw) return 'Instagram is temporarily unavailable.';
+  const lower = raw.toLowerCase();
+  if (lower.includes('access token') || lower.includes('oauth')) {
+    return 'Instagram is temporarily unavailable. Please try again shortly.';
+  }
+  if (lower.includes('http 5')) {
+    return 'Instagram is temporarily unavailable. Please try again shortly.';
+  }
+  return raw;
+}
+
 /* Brick-offset pattern for 8 tiles arranged in 2 columns of 4.
    Heights alternate to create the offset / staggered feel.
    Aspect-ratio is column-width : tile-height. 9/16 ≈ portrait reel,
@@ -161,7 +174,7 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
       })
       .catch((e) => {
         if (cancelled) return;
-        setError(String(e.message || e));
+        setError(normalizeInstagramError(e.message || e));
       });
     return () => { cancelled = true; };
   }, []);

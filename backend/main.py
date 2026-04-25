@@ -107,10 +107,21 @@ async def _fetch_instagram_media(limit: int = 16) -> list[dict[str, Any]]:
 
     if r.status_code != 200:
         log.error("Instagram Graph API error %s: %s", r.status_code, r.text[:500])
+        err_code = None
+        err_subcode = None
         try:
-            err = r.json().get("error", {}).get("message", r.text)
+            err_obj = r.json().get("error", {})
+            err = err_obj.get("message", r.text)
+            err_code = err_obj.get("code")
+            err_subcode = err_obj.get("error_subcode")
         except Exception:
             err = r.text
+
+        if err_code == 190 and err_subcode == 463:
+            raise HTTPException(503, "Instagram feed is temporarily unavailable (access token expired).")
+        if err_code == 190:
+            raise HTTPException(503, "Instagram feed is temporarily unavailable (access token invalid).")
+
         raise HTTPException(502, f"Instagram Graph API error: {err}")
 
     payload = r.json()
@@ -144,7 +155,15 @@ async def _get_cached_instagram(limit: int, *, force: bool = False) -> tuple[lis
     cached = _reels_cache["data"]
     if not force and cached is not None and (now - _reels_cache["ts"]) < _REEL_CACHE_TTL:
         return cached, _reels_cache["ts"], True
-    items = await _fetch_instagram_media(limit=max(limit, 16))
+    try:
+        items = await _fetch_instagram_media(limit=max(limit, 16))
+    except HTTPException:
+        # If Instagram is temporarily failing but we have previous data in memory,
+        # serve stale cache instead of failing the request.
+        if cached is not None:
+            log.warning("Serving stale Instagram cache after fetch failure")
+            return cached, _reels_cache["ts"], True
+        raise
     _reels_cache["data"] = items
     _reels_cache["ts"] = now
     return items, now, False
