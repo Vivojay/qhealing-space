@@ -87,11 +87,11 @@ export default function NewsletterSignup() {
           inputMode="email"
           autoComplete="email"
           required
-          placeholder="Receive gentle dispatches — your email"
+          placeholder="Send us your email"
           value={email}
           onChange={(e) => { setEmail(e.target.value); if (state !== 'idle') { setState('idle'); setMessage(''); } }}
           disabled={isLoading || isSuccess}
-          className="flex-1 bg-transparent outline-none border-0 text-sm font-light placeholder:opacity-60 disabled:opacity-70 px-1 py-1"
+          className="newsletter-input flex-1 bg-transparent outline-none border-0 text-sm font-light placeholder:opacity-60 disabled:opacity-70 px-3 sm:px-2 py-2 sm:py-1"
           style={{ color: 'var(--fg)' }}
         />
 

@@ -7,6 +7,8 @@ import { ThemeProvider } from '@/context/ThemeContext'
 import Layout from '@/Layout'
 import ScrollToTop from '@/components/ScrollToTop'
 import Home from '@/pages/Home'
+import Services from '@/pages/Services'
+import InstantConsult from '@/pages/InstantConsult'
 import Healings from '@/pages/Healings'
 import GlobalPractices from '@/pages/GlobalPractices'
 import Retreats from '@/pages/Retreats'
@@ -43,6 +45,8 @@ function AppRoutes() {
       >
         <Routes location={location}>
           <Route path="/" element={<Home />} />
+          <Route path="/services" element={<Services />} />
+          <Route path="/instant-consult" element={<InstantConsult />} />
           <Route path="/healings" element={<Healings />} />
           <Route path="/global-practices" element={<GlobalPractices />} />
           <Route path="/retreats" element={<Retreats />} />

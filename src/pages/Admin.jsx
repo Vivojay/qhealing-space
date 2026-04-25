@@ -5,6 +5,7 @@ import AdminLayout from '@/components/admin/AdminLayout';
 import AdminOverview from '@/components/admin/AdminOverview';
 import AdminInstagram from '@/components/admin/AdminInstagram';
 import AdminNewsletter from '@/components/admin/AdminNewsletter';
+import AdminInstantConsult from '@/components/admin/AdminInstantConsult';
 import AdminSettings from '@/components/admin/AdminSettings';
 import { adminApi, getToken, clearToken } from '@/components/admin/api';
 
@@ -46,6 +47,7 @@ export default function Admin() {
         <Route index element={<AdminOverview />} />
         <Route path="instagram" element={<AdminInstagram />} />
         <Route path="newsletter" element={<AdminNewsletter />} />
+        <Route path="instant-consult" element={<AdminInstantConsult />} />
         <Route path="settings" element={<AdminSettings />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>

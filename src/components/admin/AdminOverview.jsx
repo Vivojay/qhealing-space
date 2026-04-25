@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Users, Instagram, Database, Clock, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Users, Instagram, MessageCircle, Clock, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { adminApi } from './api';
 
 function StatCard({ label, value, sub, icon: Icon, accent }) {
@@ -97,6 +97,7 @@ export default function AdminOverview() {
   }
 
   const ig = metrics.instagram || {};
+  const consult = metrics.instant_consult || {};
 
   return (
     <div>
@@ -119,7 +120,7 @@ export default function AdminOverview() {
         </button>
       </div>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
         <StatCard
           label="Newsletter"
           value={metrics.newsletter_subscribers}
@@ -138,6 +139,12 @@ export default function AdminOverview() {
           value={ig.last_fetched_at ? fmtTime(ig.last_fetched_at).split(',')[1]?.trim() || '—' : '—'}
           sub={ig.last_fetched_at ? new Date((ig.last_fetched_at < 1e12 ? ig.last_fetched_at * 1000 : ig.last_fetched_at)).toLocaleDateString() : 'No sync yet'}
           icon={Clock}
+        />
+        <StatCard
+          label="Instant Consult"
+          value={consult.new || 0}
+          sub={`${consult.inprogress || 0} in progress · ${consult.done || 0} done`}
+          icon={MessageCircle}
         />
       </div>
 

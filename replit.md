@@ -21,6 +21,10 @@ Public endpoints:
 - `GET /api/instagram/reels?limit=N` — latest media for `INSTAGRAM_BUSINESS_ACCOUNT_ID` via Graph API. Cached 10 min. Respects admin curation if set.
 - `GET /api/config` — public site config (instagram handle, contact details, section toggles)
 - `POST /api/newsletter/subscribe` `{ email, source? }` — writes to Firestore `newsletter_subscribers` collection.
+- `GET /api/payments/upi-qr?amount=...` — returns UPI QR image (dynamic + cached; uses static overrides for known amounts)
+- `GET /api/consult/types` — Instant Consult type metadata used by frontend type selector
+- `GET /api/consult/my-messages` (Firebase user bearer token)
+- `POST /api/consult/messages` (Firebase user bearer token) — queues paid Instant Consult message with default status `new`
 
 Admin endpoints (Bearer token from `/api/admin/login`, HMAC-signed, 12 h TTL):
 - `POST /api/admin/login` → `{ token, expires_at }`
@@ -29,17 +33,31 @@ Admin endpoints (Bearer token from `/api/admin/login`, HMAC-signed, 12 h TTL):
 - `GET|PUT /api/admin/instagram/curation` — pick the IG posts shown on the home grid
 - `GET|DELETE /api/admin/newsletter/subscribers[/{email}]`, `GET /api/admin/newsletter/export` (CSV)
 - `GET|PUT /api/admin/config`
+- `GET /api/admin/consult/messages?status=...`
+- `PUT /api/admin/consult/messages/{id}` `{ status: new|inprogress|done }`
+- `POST /api/admin/consult/messages/{id}/reply` (multipart form-data: `reply_text`, `images[]` up to 10)
 
 Required environment secrets:
 - `FIREBASE_SERVICE_ACCOUNT_JSON` (full JSON of a service account key) + `FIREBASE_PROJECT_ID`
+- `FIREBASE_STORAGE_BUCKET` (required for admin reply image uploads in Instant Consult)
 - `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_BUSINESS_ACCOUNT_ID` (long-lived Page/IG access token + numeric IG business account id)
 - `ADMIN_PASSWORD` — required to enable the admin dashboard at `/admin`
 - `ADMIN_TOKEN_SECRET` (optional) — extra HMAC pepper for admin tokens
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` (required for client/admin transactional email + token warning mail)
+- `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` (required for daily token-expiry warning checks via `debug_token`)
 
 Frontend API target:
 - `VITE_API_BASE_URL` (optional) — base origin for API requests.
   - Default: `https://qhs.onrender.com`
   - Example local override: `VITE_API_BASE_URL=http://127.0.0.1:8000`
+
+Frontend Firebase Auth (Instant Consult):
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET` (optional)
+- `VITE_FIREBASE_MESSAGING_SENDER_ID` (optional)
+- `VITE_FIREBASE_APP_ID`
 
 ## Project Structure
 ```

@@ -78,6 +78,19 @@ export const adminApi = {
   exportSubscribers: () =>
     apiFetch('/api/admin/newsletter/export', { raw: true }),
 
+  listInstantConsult: (status) =>
+    apiFetch(`/api/admin/consult/messages${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  updateInstantConsultStatus: (id, status) =>
+    apiFetch(`/api/admin/consult/messages/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: { status },
+    }),
+  sendInstantConsultReply: (id, formData) =>
+    apiFetch(`/api/admin/consult/messages/${encodeURIComponent(id)}/reply`, {
+      method: 'POST',
+      body: formData,
+    }),
+
   getConfig: () => apiFetch('/api/admin/config'),
   putConfig: (patch) => apiFetch('/api/admin/config', { method: 'PUT', body: patch }),
 

@@ -212,7 +212,7 @@ export default function Home() {
               <img
                 src={heroMeImage}
                 alt="Portrait of Vartika Shukla"
-                className="block h-24 w-auto object-cover lg:h-[clamp(220px,28vh,300px)]"
+                className="block h-28 w-auto object-cover lg:h-[clamp(244px,31vh,328px)]"
                 style={{
                   border: '1px solid var(--border2)',
                   boxShadow: '0 12px 36px rgba(0,0,0,0.28)',

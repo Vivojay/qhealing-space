@@ -53,8 +53,8 @@ function TypeBadge({ type, isCarousel }) {
   );
 }
 
-function ReelTile({ item, idx }) {
-  const aspect = HEIGHT_PATTERN[idx % HEIGHT_PATTERN.length];
+function ReelTile({ item, idx, uniform = false }) {
+  const aspect = uniform ? '4 / 5' : HEIGHT_PATTERN[idx % HEIGHT_PATTERN.length];
   const videoRef = useRef(null);
   const [hovered, setHovered] = useState(false);
 
@@ -79,15 +79,17 @@ function ReelTile({ item, idx }) {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-60px' }}
       transition={{ duration: 0.7, delay: (idx % 4) * 0.05, ease: [0.22, 1, 0.36, 1] }}
-      whileHover={{ y: -4 }}
+      whileHover={uniform ? undefined : { y: -4 }}
       className="relative block w-full overflow-hidden group"
       style={{
         aspectRatio: aspect,
         background: 'var(--bg2)',
         border: '0',
-        boxShadow: hovered
-          ? '0 18px 40px -18px rgba(0,0,0,0.45)'
-          : '0 6px 18px -10px rgba(0,0,0,0.25)',
+        boxShadow: uniform
+          ? 'none'
+          : hovered
+            ? '0 18px 40px -18px rgba(0,0,0,0.45)'
+            : '0 6px 18px -10px rgba(0,0,0,0.25)',
         transition: 'box-shadow 0.25s ease, transform 0.25s ease',
       }}
       aria-label={`Open Instagram ${item.type === 'video' ? 'reel' : 'post'} ${handle ? handle : ''} in a new tab`}
@@ -140,8 +142,8 @@ function ReelTile({ item, idx }) {
   );
 }
 
-function PlaceholderTile({ idx }) {
-  const aspect = HEIGHT_PATTERN[idx % HEIGHT_PATTERN.length];
+function PlaceholderTile({ idx, uniform = false }) {
+  const aspect = uniform ? '4 / 5' : HEIGHT_PATTERN[idx % HEIGHT_PATTERN.length];
   return (
     <div
       className="relative w-full overflow-hidden animate-pulse"
@@ -189,7 +191,7 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
       className="relative py-24 lg:py-32 overflow-hidden"
       style={{ background: 'var(--bg-elev)', borderTop: '1px solid var(--border)' }}
     >
-      <div className="max-w-5xl mx-auto px-6 lg:px-10">
+      <div className="max-w-6xl lg:max-w-[min(1320px,94vw)] mx-auto px-6 lg:px-8">
         <div className="flex items-end justify-between mb-12 gap-6 flex-wrap">
           <motion.div
             initial={{ opacity: 0, y: 18 }}
@@ -255,26 +257,38 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
             </a>
           </div>
         ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 items-start">
-            <div className="flex flex-col gap-0">
-              {columnA.map((it, i) =>
+          <>
+            <div className="grid grid-cols-2 gap-0 items-start lg:hidden">
+              <div className="flex flex-col gap-0">
+                {columnA.map((it, i) =>
+                  it._placeholder ? (
+                    <PlaceholderTile key={`a-ph-${it._i}`} idx={it._i} />
+                  ) : (
+                    <ReelTile key={it.id || `a-${i}`} item={it} idx={i * 2} />
+                  )
+                )}
+              </div>
+              <div className="flex flex-col gap-0">
+                {columnB.map((it, i) =>
+                  it._placeholder ? (
+                    <PlaceholderTile key={`b-ph-${it._i}`} idx={it._i} />
+                  ) : (
+                    <ReelTile key={it.id || `b-${i}`} item={it} idx={i * 2 + 1} />
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="hidden lg:grid lg:grid-cols-8 gap-0 items-stretch">
+              {tiles.slice(0, 8).map((it, i) =>
                 it._placeholder ? (
-                  <PlaceholderTile key={`a-ph-${it._i}`} idx={it._i} />
+                  <PlaceholderTile key={`lg-ph-${it._i}`} idx={it._i} uniform />
                 ) : (
-                  <ReelTile key={it.id || `a-${i}`} item={it} idx={i * 2} />
+                  <ReelTile key={it.id || `lg-${i}`} item={it} idx={i} uniform />
                 )
               )}
             </div>
-            <div className="flex flex-col gap-0">
-              {columnB.map((it, i) =>
-                it._placeholder ? (
-                  <PlaceholderTile key={`b-ph-${it._i}`} idx={it._i} />
-                ) : (
-                  <ReelTile key={it.id || `b-${i}`} item={it} idx={i * 2 + 1} />
-                )
-              )}
-            </div>
-          </div>
+          </>
         )}
       </div>
     </section>

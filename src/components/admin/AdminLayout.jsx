@@ -1,12 +1,13 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Instagram, Mail, Settings, LogOut, ExternalLink } from 'lucide-react';
+import { LayoutDashboard, Instagram, Mail, MessageSquare, Settings, LogOut, ExternalLink } from 'lucide-react';
 import { clearToken } from './api';
 
 const TABS = [
   { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/admin/instagram', label: 'Instagram', icon: Instagram },
   { to: '/admin/newsletter', label: 'Newsletter', icon: Mail },
+  { to: '/admin/instant-consult', label: 'Instant Consult', icon: MessageSquare },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 

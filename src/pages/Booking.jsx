@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import Footer from '@/components/wellness/Footer';
 import { PRICING } from '@/constants/pricing';
 import { PaytmLogo, WiseLogo, PayPalLogo, RemitlyLogo, WesternUnionLogo, SwiftLogo } from '@/components/BrandLogos';
-import paytmQrImage from '../../attached_assets/paytm.jpg';
+import { apiUrl } from '@/utils';
 
 const SMOOTH = { duration: 0.6, ease: [0.16, 1, 0.3, 1] };
 const SMOOTH_SLOW = { duration: 0.65, ease: [0.16, 1, 0.3, 1] };
@@ -38,7 +38,7 @@ const SERVICES = [
 
 const FORMAT = ['In-person (Gurugram)', 'Online — WhatsApp', 'Online — Skype'];
 
-const UPI_QR = paytmQrImage;
+const UPI_QR = apiUrl('/api/payments/upi-qr?amount=2500');
 
 const SERVICE_ALIASES = {
   reiki: 'Reiki Healing',

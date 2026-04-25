@@ -1,6 +1,8 @@
 export function createPageUrl(page) {
   const routes = {
     'Home': '/',
+    'Services': '/services',
+    'Instant Consult': '/instant-consult',
     'Healings': '/healings',
     'Global Practices': '/global-practices',
     'Retreats': '/retreats',

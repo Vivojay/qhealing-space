@@ -57,17 +57,19 @@ function TopBanner() {
 
 const navItems = [
   { label: 'Home', page: 'Home', number: '00' },
-  { label: 'Healings', page: 'Healings', number: '01' },
-  { label: 'Global Practices', page: 'Global Practices', number: '02' },
-  { label: 'Retreats', page: 'Retreats', number: '03' },
-  { label: 'Hindu Rituals', page: 'Hindu Rituals', number: '04' },
-  { label: 'Transcendence Rituals', page: 'Transcendence Rituals', number: '05' },
+  { label: 'Services', page: 'Services', number: '01' },
+  { label: 'Instant Consult', page: 'Instant Consult', number: 'IC', special: true },
+  { label: 'Healings', page: 'Healings', number: '02' },
+  { label: 'Global Practices', page: 'Global Practices', number: '03' },
+  { label: 'Retreats', page: 'Retreats', number: '04' },
+  { label: 'Hindu Rituals', page: 'Hindu Rituals', number: '05' },
+  { label: 'Transcendence Rituals', page: 'Transcendence Rituals', number: '06' },
 ];
 
 export default function Layout({ children }) {
   const [expanded, setExpanded] = useState(false);
   const location = useLocation();
-  const { isDark, toggleTheme } = useTheme();
+  const { toggleTheme } = useTheme();
 
   // Auto-collapse the sidebar whenever the route changes (mobile-friendly)
   useEffect(() => { setExpanded(false); }, [location.pathname]);
@@ -133,9 +135,13 @@ export default function Layout({ children }) {
                 key={item.page}
                 to={href}
                 onClick={() => setExpanded(false)}
-                className="group relative flex items-center gap-4 px-2 py-4 lg:py-4 rounded hover-surface"
+                className={`group relative flex items-center gap-4 px-2 py-4 lg:py-4 rounded ${item.special ? '' : 'hover-surface'}`}
+                style={item.special ? {
+                  border: `1px solid ${active ? 'var(--special-accent)' : 'var(--special-border)'}`,
+                  background: active ? 'var(--special-bg-active)' : 'var(--special-bg)',
+                } : undefined}
               >
-                {active && (
+                {active && !item.special && (
                   <motion.div
                     layoutId="active-pill"
                     className="absolute inset-0 rounded"
@@ -145,7 +151,7 @@ export default function Layout({ children }) {
                 )}
                 <span
                   className="text-[10px] font-mono flex-shrink-0 relative w-6 text-center"
-                  style={{ color: active ? 'var(--fg2)' : 'var(--fg3)' }}
+                  style={{ color: item.special ? (active ? 'var(--special-accent)' : 'var(--special-text)') : (active ? 'var(--fg2)' : 'var(--fg3)') }}
                 >
                   {item.number}
                 </span>
@@ -157,7 +163,7 @@ export default function Layout({ children }) {
                       exit={{ opacity: 0, x: -6 }}
                       transition={{ duration: 0.28, delay: i * 0.025 }}
                       className="text-[15px] font-light whitespace-nowrap relative"
-                      style={{ color: active ? 'var(--fg)' : 'var(--fg2)' }}
+                      style={{ color: item.special ? (active ? 'var(--special-accent)' : 'var(--special-text)') : (active ? 'var(--fg)' : 'var(--fg2)') }}
                     >
                       {item.label}
                     </motion.span>
