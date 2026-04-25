@@ -236,7 +236,7 @@ export default function Home() {
               className="text-[15px] font-light leading-relaxed mb-10"
               style={{ color: 'var(--fg2)' }}
             >
-              Ancient wisdom, sacred ritual, and <span style={{ color: 'var(--accent-text)' }}>transformative practice</span> — converging for your healing.
+              Psychic, hypnotherapist, psychologist, and <span style={{ color: 'var(--accent-text)' }}>Shaktipat guru</span> with 25+ years guiding women, men, and children through healing modalities, predictive sciences, and spiritually grounded counseling.
             </motion.p>
             <motion.div
               initial={{ opacity: 0, y: 16 }}
