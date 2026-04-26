@@ -91,6 +91,14 @@ export const adminApi = {
       body: formData,
     }),
 
+  listInstantConsultPaymentClaims: (status = 'pending') =>
+    apiFetch(`/api/admin/consult/payment-claims${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  updateInstantConsultPaymentClaimStatus: (id, status, note = '') =>
+    apiFetch(`/api/admin/consult/payment-claims/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: { status, note },
+    }),
+
   getConfig: () => apiFetch('/api/admin/config'),
   putConfig: (patch) => apiFetch('/api/admin/config', { method: 'PUT', body: patch }),
 

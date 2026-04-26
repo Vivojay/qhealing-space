@@ -56,6 +56,7 @@ from firebase_admin import auth as firebase_auth
 from firebase_admin import credentials, firestore, storage
 from google.api_core import exceptions as gcloud_exc
 from pydantic import BaseModel, EmailStr, Field
+from dotenv import load_dotenv
 
 try:
     import qrcode
@@ -66,6 +67,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("qhs.backend")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Load local env files automatically for dev runs (without requiring --env-file).
+# Existing process env vars still win because override=False.
+for env_path in (PROJECT_ROOT / ".env", PROJECT_ROOT / "backend" / ".env"):
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+
 ADMIN_ALERT_EMAIL = "vartikashukla2000@yahoo.com"
 INSTANT_CONSULT_FEE_INR = 1500
 MAX_CONSULT_REPLY_IMAGES = 10
@@ -78,6 +86,7 @@ ALLOWED_CONSULT_REPLY_IMAGE_TYPES = {
 }
 
 CONSULT_STATUS_VALUES: tuple[str, ...] = ("new", "inprogress", "done")
+PAYMENT_CLAIM_STATUS_VALUES: tuple[str, ...] = ("pending", "approved", "rejected", "consumed")
 
 CONSULT_TYPES: list[dict[str, Any]] = [
     {
@@ -203,8 +212,9 @@ def get_firestore() -> firestore.Client:
         sa_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
         if not sa_json:
             raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON is not set")
+        normalized_sa_json = sa_json.replace("\\\r\n", "\\n").replace("\\\n", "\\n")
         try:
-            sa_info = json.loads(sa_json)
+            sa_info = json.loads(normalized_sa_json)
         except json.JSONDecodeError as e:
             raise RuntimeError(f"FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON: {e}") from e
         cred = credentials.Certificate(sa_info)
@@ -400,6 +410,7 @@ def require_client(authorization: str | None = Header(default=None)) -> dict[str
         get_firestore()
         decoded = firebase_auth.verify_id_token(id_token)
     except RuntimeError as exc:
+        log.error("Client authentication is not configured: %s", exc)
         raise HTTPException(503, "Client authentication is not configured") from exc
     except Exception as exc:
         log.warning("Client auth token verification failed: %s", exc)
@@ -435,6 +446,41 @@ def _normalize_consult_status(raw_status: str | None) -> str:
     if status not in CONSULT_STATUS_VALUES:
         raise HTTPException(400, "Invalid status")
     return status
+
+
+def _normalize_payment_claim_status(raw_status: str | None) -> str:
+    status = (raw_status or "").strip().lower()
+    if status not in PAYMENT_CLAIM_STATUS_VALUES:
+        raise HTTPException(400, "Invalid payment claim status")
+    return status
+
+
+def _normalize_payment_reference(raw_value: str) -> str:
+    raw = str(raw_value or "").strip().upper()
+    compact = re.sub(r"\s+", "", raw)
+    if not re.fullmatch(r"[A-Z0-9_-]{6,64}", compact):
+        raise HTTPException(400, "Enter a valid payment reference (6-64 chars, letters/numbers)")
+    return compact
+
+
+def _serialize_payment_claim(doc: Any) -> dict[str, Any]:
+    data = doc.to_dict() or {}
+    return {
+        "id": doc.id,
+        "uid": data.get("uid"),
+        "email": data.get("email"),
+        "display_name": data.get("display_name"),
+        "payment_reference": data.get("payment_reference"),
+        "payment_amount": data.get("payment_amount"),
+        "payment_currency": data.get("payment_currency") or "INR",
+        "status": data.get("status") or "pending",
+        "note": data.get("note") or "",
+        "reviewed_by": data.get("reviewed_by") or None,
+        "reviewed_at": _iso_value(data.get("reviewed_at")),
+        "created_at": _iso_value(data.get("created_at")),
+        "updated_at": _iso_value(data.get("updated_at")),
+        "consumed_for_message_id": data.get("consumed_for_message_id") or None,
+    }
 
 
 def _clean_machine_value(value: Any) -> str:
@@ -899,11 +945,22 @@ class InstantConsultCreateRequest(BaseModel):
     type_id: str = Field(min_length=3, max_length=64)
     question: str = Field(min_length=8, max_length=4000)
     payment_reference: str = Field(min_length=3, max_length=120)
+    payment_claim_id: str = Field(min_length=6, max_length=128)
     payment_amount: int = Field(default=INSTANT_CONSULT_FEE_INR, ge=1, le=500000)
 
 
 class InstantConsultStatusRequest(BaseModel):
     status: str
+
+
+class InstantConsultPaymentClaimRequest(BaseModel):
+    payment_reference: str = Field(min_length=6, max_length=120)
+    payment_amount: int = Field(default=INSTANT_CONSULT_FEE_INR, ge=1, le=500000)
+
+
+class InstantConsultPaymentClaimStatusRequest(BaseModel):
+    status: str
+    note: str | None = Field(default=None, max_length=300)
 
 
 def _serialize_consult_message(doc: Any) -> dict[str, Any]:
@@ -932,6 +989,8 @@ def _serialize_consult_message(doc: Any) -> dict[str, Any]:
         "payment_amount": data.get("payment_amount"),
         "payment_currency": data.get("payment_currency") or "INR",
         "payment_reference": data.get("payment_reference"),
+        "payment_claim_id": data.get("payment_claim_id") or None,
+        "payment_verified": bool(data.get("payment_claim_id")),
         "created_at": _iso_value(data.get("created_at")),
         "updated_at": _iso_value(data.get("updated_at")),
         "admin_reply": admin_reply,
@@ -1015,6 +1074,76 @@ async def consult_my_messages(limit: int = 50, identity: dict[str, Any] = Depend
     return {"data": rows, "count": len(rows)}
 
 
+@app.post("/api/consult/payments/claim")
+async def consult_claim_payment(
+    body: InstantConsultPaymentClaimRequest,
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
+    if body.payment_amount != INSTANT_CONSULT_FEE_INR:
+        raise HTTPException(400, f"Instant Consult requires INR {INSTANT_CONSULT_FEE_INR} per message")
+
+    uid = str(identity.get("uid"))
+    email = str(identity.get("email") or "").strip().lower()
+    display_name = (
+        str(identity.get("name") or "").strip()
+        or str(identity.get("display_name") or "").strip()
+        or (email.split("@", 1)[0] if email else "Client")
+    )
+
+    payment_reference = _normalize_payment_reference(body.payment_reference)
+    claim_id = hashlib.sha256(f"{uid}:{payment_reference}".encode("utf-8")).hexdigest()[:40]
+
+    db = get_firestore()
+    claim_ref = db.collection("instant_consult_payment_claims").document(claim_id)
+    existing = claim_ref.get()
+    existing_data = existing.to_dict() if existing.exists else {}
+    existing_status = (existing_data.get("status") or "").strip().lower()
+
+    if existing_status == "consumed":
+        raise HTTPException(409, "This payment reference has already been used.")
+
+    query = db.collection("instant_consult_payment_claims").where("payment_reference", "==", payment_reference).limit(20).stream()
+    for other_claim in query:
+        other_data = other_claim.to_dict() or {}
+        if str(other_data.get("uid") or "") == uid:
+            continue
+        other_status = (other_data.get("status") or "").strip().lower()
+        if other_status in {"pending", "approved", "consumed"}:
+            raise HTTPException(409, "This payment reference is already in use.")
+
+    next_status = existing_status if existing_status in {"approved", "consumed"} else "pending"
+    patch: dict[str, Any] = {
+        "uid": uid,
+        "email": email,
+        "display_name": display_name,
+        "payment_reference": payment_reference,
+        "payment_amount": INSTANT_CONSULT_FEE_INR,
+        "payment_currency": "INR",
+        "status": next_status,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }
+    if not existing.exists:
+        patch["created_at"] = firestore.SERVER_TIMESTAMP
+    if next_status == "pending":
+        patch["note"] = ""
+        patch["reviewed_by"] = None
+        patch["reviewed_at"] = None
+
+    claim_ref.set(patch, merge=True)
+    claim_doc = claim_ref.get()
+    serialized = _serialize_payment_claim(claim_doc)
+    return {
+        "ok": True,
+        "data": serialized,
+        "verified": serialized.get("status") == "approved",
+        "client_notice": (
+            "Payment verified. You can now send one message."
+            if serialized.get("status") == "approved"
+            else "Payment reference submitted. It will unlock once verified by admin."
+        ),
+    }
+
+
 @app.post("/api/consult/messages")
 async def consult_create_message(
     body: InstantConsultCreateRequest,
@@ -1027,6 +1156,12 @@ async def consult_create_message(
 
     if body.payment_amount != INSTANT_CONSULT_FEE_INR:
         raise HTTPException(400, f"Instant Consult requires INR {INSTANT_CONSULT_FEE_INR} per message")
+
+    claim_id = body.payment_claim_id.strip()
+    if len(claim_id) < 6:
+        raise HTTPException(400, "Payment claim is required")
+
+    normalized_payment_reference = _normalize_payment_reference(body.payment_reference)
 
     question = body.question.strip()
     if len(question) < 8:
@@ -1061,6 +1196,22 @@ async def consult_create_message(
         merge=True,
     )
 
+    claim_ref = db.collection("instant_consult_payment_claims").document(claim_id)
+    claim_snap = claim_ref.get()
+    if not claim_snap.exists:
+        raise HTTPException(402, "Payment has not been verified yet")
+
+    claim_data = claim_snap.to_dict() or {}
+    claim_status = (claim_data.get("status") or "").strip().lower()
+    if str(claim_data.get("uid") or "") != uid:
+        raise HTTPException(403, "Payment proof does not belong to this account")
+    if claim_status == "consumed":
+        raise HTTPException(409, "This payment has already been used")
+    if claim_status != "approved":
+        raise HTTPException(402, "Payment is pending admin verification")
+    if str(claim_data.get("payment_reference") or "") != normalized_payment_reference:
+        raise HTTPException(400, "Payment reference mismatch")
+
     doc_ref = db.collection("instant_consult_messages").document()
     payload = {
         "uid": uid,
@@ -1073,11 +1224,37 @@ async def consult_create_message(
         "status": "new",
         "payment_amount": INSTANT_CONSULT_FEE_INR,
         "payment_currency": "INR",
-        "payment_reference": body.payment_reference.strip(),
+        "payment_reference": normalized_payment_reference,
+        "payment_claim_id": claim_id,
         "created_at": firestore.SERVER_TIMESTAMP,
         "updated_at": firestore.SERVER_TIMESTAMP,
     }
-    doc_ref.set(payload)
+
+    @firestore.transactional
+    def _consume_payment_and_create_message(transaction: Any) -> None:
+        tx_claim = claim_ref.get(transaction=transaction)
+        if not tx_claim.exists:
+            raise HTTPException(402, "Payment has not been verified yet")
+        tx_data = tx_claim.to_dict() or {}
+        tx_status = (tx_data.get("status") or "").strip().lower()
+        if str(tx_data.get("uid") or "") != uid:
+            raise HTTPException(403, "Payment proof does not belong to this account")
+        if tx_status == "consumed":
+            raise HTTPException(409, "This payment has already been used")
+        if tx_status != "approved":
+            raise HTTPException(402, "Payment is pending admin verification")
+
+        transaction.update(
+            claim_ref,
+            {
+                "status": "consumed",
+                "consumed_for_message_id": doc_ref.id,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            },
+        )
+        transaction.set(doc_ref, payload)
+
+    _consume_payment_and_create_message(db.transaction())
 
     snap = doc_ref.get()
     row = _serialize_consult_message(snap)
@@ -1310,6 +1487,63 @@ async def admin_export_subscribers(_=Depends(require_admin)) -> Response:
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="subscribers.csv"'},
     )
+
+
+@app.get("/api/admin/consult/payment-claims")
+async def admin_list_payment_claims(
+    status: str | None = None,
+    limit: int = 200,
+    _=Depends(require_admin),
+) -> dict[str, Any]:
+    status_filter = _normalize_payment_claim_status(status) if status else None
+    db = get_firestore()
+    safe_limit = max(1, min(limit, 500))
+
+    query = db.collection("instant_consult_payment_claims")
+    if status_filter:
+        query = query.where("status", "==", status_filter)
+
+    try:
+        docs = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(safe_limit).stream()
+    except Exception:
+        docs = query.limit(safe_limit).stream()
+
+    rows = [_serialize_payment_claim(d) for d in docs]
+    rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return {"data": rows, "count": len(rows)}
+
+
+@app.put("/api/admin/consult/payment-claims/{claim_id}")
+async def admin_update_payment_claim(
+    claim_id: str,
+    body: InstantConsultPaymentClaimStatusRequest,
+    _=Depends(require_admin),
+) -> dict[str, Any]:
+    next_status = _normalize_payment_claim_status(body.status)
+    if next_status == "consumed":
+        raise HTTPException(400, "Consumed status is managed automatically by message creation")
+
+    ref = get_firestore().collection("instant_consult_payment_claims").document(claim_id)
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(404, "Payment claim not found")
+
+    existing = snap.to_dict() or {}
+    if (existing.get("status") or "").strip().lower() == "consumed":
+        raise HTTPException(409, "Cannot update a claim that has already been consumed")
+
+    patch: dict[str, Any] = {
+        "status": next_status,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+        "note": (body.note or "").strip(),
+    }
+    if next_status in {"approved", "rejected"}:
+        patch["reviewed_by"] = "admin"
+        patch["reviewed_at"] = firestore.SERVER_TIMESTAMP
+
+    ref.set(patch, merge=True)
+    updated = ref.get()
+    return {"ok": True, "data": _serialize_payment_claim(updated)}
 
 
 @app.get("/api/admin/consult/messages")

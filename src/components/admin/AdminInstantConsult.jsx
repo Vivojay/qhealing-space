@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
+  CheckCircle2,
   ImagePlus,
   Loader2,
   MessageCircle,
   RefreshCw,
   Search,
   Send,
+  XCircle,
 } from 'lucide-react';
 import { adminApi } from './api';
 
@@ -59,6 +61,7 @@ function formatTime(value) {
 
 export default function AdminInstantConsult() {
   const [rows, setRows] = useState([]);
+  const [paymentClaims, setPaymentClaims] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -71,6 +74,7 @@ export default function AdminInstantConsult() {
   const [replyFiles, setReplyFiles] = useState([]);
   const [replyingId, setReplyingId] = useState('');
   const [replyNotice, setReplyNotice] = useState('');
+  const [claimActionId, setClaimActionId] = useState('');
 
   const load = useCallback(async ({ soft = false, quiet = false } = {}) => {
     if (soft) setRefreshing(true);
@@ -78,8 +82,12 @@ export default function AdminInstantConsult() {
     if (!quiet) setError('');
 
     try {
-      const payload = await adminApi.listInstantConsult(statusFilter === 'all' ? undefined : statusFilter);
-      setRows(payload?.data || []);
+      const [messagesPayload, claimsPayload] = await Promise.all([
+        adminApi.listInstantConsult(statusFilter === 'all' ? undefined : statusFilter),
+        adminApi.listInstantConsultPaymentClaims('pending'),
+      ]);
+      setRows(messagesPayload?.data || []);
+      setPaymentClaims(claimsPayload?.data || []);
     } catch (err) {
       if (!quiet) setError(err.message || 'Failed to load instant consult queue');
     } finally {
@@ -194,6 +202,22 @@ export default function AdminInstantConsult() {
     }
   };
 
+  const reviewPaymentClaim = async (claimId, status) => {
+    if (!claimId || claimActionId) return;
+    setClaimActionId(claimId);
+    setError('');
+    setReplyNotice('');
+    try {
+      await adminApi.updateInstantConsultPaymentClaimStatus(claimId, status);
+      setPaymentClaims((prev) => prev.filter((item) => item.id !== claimId));
+      setReplyNotice(status === 'approved' ? 'Payment claim approved.' : 'Payment claim rejected.');
+    } catch (err) {
+      setError(err.message || 'Failed to update payment claim');
+    } finally {
+      setClaimActionId('');
+    }
+  };
+
   if (loading) {
     return (
       <div className="py-12 flex items-center gap-3" style={{ color: 'var(--fg2)' }}>
@@ -269,6 +293,46 @@ export default function AdminInstantConsult() {
       {replyNotice && (
         <div className="rounded-xl p-4 mb-5 text-sm" style={{ background: 'var(--accent-dim)', border: '1px solid var(--accent-soft)', color: 'var(--accent-text)' }}>
           {replyNotice}
+        </div>
+      )}
+
+      {!!paymentClaims.length && (
+        <div className="rounded-xl p-4 lg:p-5 mb-6" style={{ border: '1px solid var(--border)', background: 'var(--bg-elev)' }}>
+          <p className="text-[10px] tracking-[0.26em] uppercase" style={{ color: 'var(--accent-text)' }}>Pending Payment Verifications</p>
+          <div className="mt-3 space-y-2.5">
+            {paymentClaims.map((claim) => (
+              <div key={claim.id} className="rounded-lg p-3 flex flex-wrap items-center justify-between gap-3" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
+                <div>
+                  <p className="text-xs" style={{ color: 'var(--fg)' }}>{claim.display_name || claim.email || claim.uid || 'Client'}</p>
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--fg2)' }}>
+                    INR {claim.payment_amount} · {claim.payment_reference} · {formatTime(claim.created_at)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => reviewPaymentClaim(claim.id, 'approved')}
+                    disabled={claimActionId === claim.id}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] tracking-[0.18em] uppercase disabled:opacity-60"
+                    style={{ border: '1px solid rgba(99,230,168,0.45)', color: '#63E6A8' }}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={1.9} />
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => reviewPaymentClaim(claim.id, 'rejected')}
+                    disabled={claimActionId === claim.id}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] tracking-[0.18em] uppercase disabled:opacity-60"
+                    style={{ border: '1px solid rgba(224,138,111,0.45)', color: '#E08A6F' }}
+                  >
+                    <XCircle className="w-3.5 h-3.5" strokeWidth={1.9} />
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

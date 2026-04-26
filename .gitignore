@@ -23,6 +23,7 @@ pnpm-debug.log*
 .env.*.local
 !.env.example
 !.env.*.example
+serviceAccountKey.json
 
 # Coverage and caches
 coverage/
@@ -41,7 +42,9 @@ Thumbs.db
 !.vscode/tasks.json
 !.vscode/launch.json
 
-# Generated attached assets (easy to tweak later)
+# Generated attached_assets artifacts not referenced by runtime code
+# (keep imported asset folders like attached_assets/elements, attached_assets/textures,
+# and attached_assets/qr-codes tracked)
 attached_assets/branding-*.json
 attached_assets/screenshot-*.png
 attached_assets/image_*.png

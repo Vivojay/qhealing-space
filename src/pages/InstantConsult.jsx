@@ -10,9 +10,11 @@ import {
   Lock,
   LogOut,
   Mail,
+  Maximize2,
   Mic,
   Send,
   WalletCards,
+  X,
 } from 'lucide-react';
 import {
   createUserWithEmailAndPassword,
@@ -198,6 +200,20 @@ function humanizeAuthError(err, fallback) {
   if (code.includes('invalid-email')) {
     return 'Please enter a valid email address.';
   }
+  if (
+    code.includes('invalid-credential')
+    || code.includes('wrong-password')
+    || code.includes('user-not-found')
+    || message.includes('INVALID_LOGIN_CREDENTIALS')
+  ) {
+    return 'Invalid email or password. If this is a new account, switch to Sign up first.';
+  }
+  if (code.includes('user-disabled')) {
+    return 'This account is disabled. Please contact support.';
+  }
+  if (code.includes('too-many-requests')) {
+    return 'Too many attempts. Please wait a bit and try again.';
+  }
   if (code.includes('popup-closed-by-user')) {
     return 'Google sign-in popup was closed before completion.';
   }
@@ -225,8 +241,11 @@ export default function InstantConsult() {
   const [loadingMessages, setLoadingMessages] = useState(false);
 
   const [paymentReference, setPaymentReference] = useState('');
+  const [paymentClaimId, setPaymentClaimId] = useState('');
   const [paymentUnlocked, setPaymentUnlocked] = useState(false);
+  const [paymentVerifying, setPaymentVerifying] = useState(false);
   const [paymentNotice, setPaymentNotice] = useState('');
+  const [qrModalOpen, setQrModalOpen] = useState(false);
 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -366,7 +385,7 @@ export default function InstantConsult() {
       setIdToken(token);
       setAuthUser(cred.user);
       await loadMessages(token);
-      setSendNotice('Sign-in successful. Complete payment to unlock one message.');
+      setSendNotice('Sign-in successful. Complete payment and verify the UTR to unlock one message.');
     } catch (err) {
       setAuthError(humanizeAuthError(err, 'Google sign-in failed.'));
     } finally {
@@ -393,7 +412,7 @@ export default function InstantConsult() {
       setIdToken(token);
       setAuthUser(userCred.user);
       await loadMessages(token);
-      setSendNotice('Account ready. Complete payment to unlock one message.');
+      setSendNotice('Account ready. Complete payment and verify the UTR to unlock one message.');
     } catch (err) {
       setAuthError(humanizeAuthError(err, 'Authentication failed.'));
     } finally {
@@ -408,19 +427,56 @@ export default function InstantConsult() {
     setIdToken('');
     setMessages([]);
     setPaymentUnlocked(false);
+    setPaymentClaimId('');
     setPaymentReference('');
     setPaymentNotice('');
+    setQrModalOpen(false);
     setSendNotice('');
   };
 
-  const unlockPayment = () => {
+  const unlockPayment = async () => {
+    if (!idToken || paymentVerifying) return;
+
     const ref = paymentReference.trim();
     if (ref.length < 6) {
       setPaymentNotice('Enter a valid payment reference (UTR / transaction ID).');
       return;
     }
-    setPaymentUnlocked(true);
-    setPaymentNotice('Payment reference captured. You can now send one Instant Consult message.');
+
+    setPaymentVerifying(true);
+    setPaymentNotice('');
+    setSendError('');
+    try {
+      const res = await fetch(apiUrl('/api/consult/payments/claim'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          payment_reference: ref,
+          payment_amount: INSTANT_FEE_AMOUNT,
+        }),
+      });
+      if (!res.ok) throw new Error(await parseApiError(res));
+      const payload = await res.json();
+      const claim = payload?.data || {};
+      const approved = claim?.status === 'approved';
+      setPaymentClaimId(claim?.id || '');
+      setPaymentUnlocked(approved);
+      setPaymentNotice(
+        payload?.client_notice
+          || (approved
+            ? 'Payment verified. You can now send one Instant Consult message.'
+            : 'Payment reference submitted. It will unlock once admin verifies it.'),
+      );
+    } catch (err) {
+      setPaymentUnlocked(false);
+      setPaymentClaimId('');
+      setPaymentNotice(err.message || 'Could not verify payment reference.');
+    } finally {
+      setPaymentVerifying(false);
+    }
   };
 
   const startVoiceCapture = () => {
@@ -468,7 +524,11 @@ export default function InstantConsult() {
       return;
     }
     if (!paymentUnlocked) {
-      setSendError('Complete the ₹1,500 payment step before sending your message.');
+      setSendError('Complete payment verification before sending your message.');
+      return;
+    }
+    if (!paymentClaimId) {
+      setSendError('Payment claim missing. Please verify payment reference again.');
       return;
     }
 
@@ -492,6 +552,7 @@ export default function InstantConsult() {
           type_id: resolvedTypeId,
           question,
           payment_reference: paymentReference.trim(),
+          payment_claim_id: paymentClaimId,
           payment_amount: INSTANT_FEE_AMOUNT,
         }),
       });
@@ -500,8 +561,9 @@ export default function InstantConsult() {
 
       setDraft('');
       setPaymentUnlocked(false);
+      setPaymentClaimId('');
       setPaymentReference('');
-      setPaymentNotice('A fresh ₹1,500 payment is required for the next message.');
+      setPaymentNotice('A fresh verified payment is required for the next message.');
       setSendNotice(payload.client_notice || WAIT_NOTICE);
       await loadMessages();
     } catch (err) {
@@ -732,8 +794,31 @@ export default function InstantConsult() {
                     <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: '#5b6b85' }}>Pay with Paytm</span>
                     <span className="text-sm font-semibold" style={{ color: '#002E6E' }}>{INSTANT_FEE_LABEL}</span>
                   </div>
-                  <div className="mt-3 rounded-lg overflow-hidden" style={{ border: '1px solid rgba(0,46,110,0.22)' }}>
-                    <img src={PAYMENT_QR_SRC} alt="Instant consult Paytm QR" className="w-full h-auto block" />
+                  <div className="mt-3 flex justify-center">
+                    <div
+                      className="rounded-lg overflow-hidden w-full"
+                      style={{
+                        border: '1px solid rgba(0,46,110,0.22)',
+                        maxWidth: 'min(84vw, 320px)',
+                      }}
+                    >
+                      <img
+                        src={PAYMENT_QR_SRC}
+                        alt="Instant consult Paytm QR"
+                        className="block w-full h-auto aspect-square object-contain"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setQrModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] tracking-[0.18em] uppercase"
+                      style={{ border: '1px solid rgba(0,46,110,0.35)', color: '#002E6E' }}
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                      Tap for full-size QR
+                    </button>
                   </div>
                 </div>
 
@@ -741,7 +826,12 @@ export default function InstantConsult() {
                   <label className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Payment reference (UTR / Txn ID)</label>
                   <input
                     value={paymentReference}
-                    onChange={(e) => { setPaymentReference(e.target.value); setPaymentNotice(''); }}
+                    onChange={(e) => {
+                      setPaymentReference(e.target.value);
+                      setPaymentUnlocked(false);
+                      setPaymentClaimId('');
+                      setPaymentNotice('');
+                    }}
                     placeholder="e.g. T202604..."
                     className="w-full mt-1 bg-transparent border-0 outline-none text-sm pb-2"
                     style={{ color: 'var(--fg)', borderBottom: '1px solid var(--border2)' }}
@@ -749,11 +839,16 @@ export default function InstantConsult() {
                   <button
                     type="button"
                     onClick={unlockPayment}
+                    disabled={paymentVerifying}
                     className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] tracking-[0.2em] uppercase"
-                    style={{ border: `1px solid ${paymentUnlocked ? '#63E6A8' : 'var(--special-border)'}`, color: paymentUnlocked ? '#63E6A8' : 'var(--special-accent)' }}
+                    style={{ border: `1px solid ${paymentUnlocked ? '#63E6A8' : 'var(--special-border)'}`, color: paymentUnlocked ? '#63E6A8' : 'var(--special-accent)', opacity: paymentVerifying ? 0.8 : 1 }}
                   >
-                    {paymentUnlocked ? <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2} /> : <WalletCards className="w-3.5 h-3.5" strokeWidth={1.8} />}
-                    {paymentUnlocked ? 'Unlocked for one message' : 'I have paid'}
+                    {paymentVerifying
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} />
+                      : paymentUnlocked
+                        ? <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2} />
+                        : <WalletCards className="w-3.5 h-3.5" strokeWidth={1.8} />}
+                    {paymentVerifying ? 'Verifying...' : paymentUnlocked ? 'Verified for one message' : 'Submit payment reference'}
                   </button>
                   {paymentNotice && (
                     <p className="mt-2 text-xs" style={{ color: paymentUnlocked ? '#63E6A8' : 'var(--fg2)' }}>{paymentNotice}</p>
@@ -950,6 +1045,46 @@ export default function InstantConsult() {
           </div>
         </div>
       </section>
+
+      <AnimatePresence>
+        {qrModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] px-5 py-10 flex items-center justify-center"
+            style={{ background: 'rgba(6, 10, 18, 0.78)' }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.96 }}
+              transition={{ duration: 0.22 }}
+              className="w-full max-w-[480px] rounded-2xl p-4"
+              style={{ background: '#fff', border: '1px solid rgba(0,46,110,0.22)' }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] tracking-[0.2em] uppercase" style={{ color: '#5b6b85' }}>Paytm QR · {INSTANT_FEE_LABEL}</p>
+                <button
+                  type="button"
+                  onClick={() => setQrModalOpen(false)}
+                  className="w-8 h-8 rounded-full inline-flex items-center justify-center"
+                  style={{ border: '1px solid rgba(0,46,110,0.18)', color: '#002E6E' }}
+                  aria-label="Close QR preview"
+                >
+                  <X className="w-4 h-4" strokeWidth={1.9} />
+                </button>
+              </div>
+              <div className="mt-3 rounded-lg overflow-hidden" style={{ border: '1px solid rgba(0,46,110,0.2)' }}>
+                <img src={PAYMENT_QR_SRC} alt="Full size Instant consult Paytm QR" className="block w-full h-auto" />
+              </div>
+              <p className="mt-3 text-xs" style={{ color: '#43556f' }}>
+                Keep your screen brightness high while scanning. Enter the exact UTR after payment.
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <Footer />
     </div>
