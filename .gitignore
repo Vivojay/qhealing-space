@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.venv/
 
 # Build outputs
 dist/
@@ -46,3 +47,8 @@ attached_assets/screenshot-*.png
 attached_assets/image_*.png
 attached_assets/Pasted-*.txt
 attached_assets/content-*.md
+
+__pycache__/
+*.pyo
+*.pyd
+*.pyc

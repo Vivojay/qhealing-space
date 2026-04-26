@@ -176,6 +176,35 @@ async function parseApiError(res) {
   return `HTTP ${res.status}`;
 }
 
+function humanizeAuthError(err, fallback) {
+  const code = String(err?.code || '').toLowerCase();
+  const message = String(err?.message || '');
+
+  if (code.includes('operation-not-allowed') || message.includes('OPERATION_NOT_ALLOWED')) {
+    return 'Email/Password sign-in is disabled in Firebase. Enable it in Firebase Auth > Sign-in method.';
+  }
+  if (code.includes('invalid-api-key') || code.includes('api-key-not-valid')) {
+    return 'Firebase API key is invalid for this project. Re-check VITE_FIREBASE_API_KEY.';
+  }
+  if (code.includes('auth-domain-config-required') || message.includes('CONFIGURATION_NOT_FOUND')) {
+    return 'Firebase project config is incomplete. Verify VITE_FIREBASE_* values from the same Firebase web app.';
+  }
+  if (code.includes('email-already-in-use')) {
+    return 'This email is already registered. Please switch to Login.';
+  }
+  if (code.includes('weak-password')) {
+    return 'Password is too weak. Use at least 6 characters.';
+  }
+  if (code.includes('invalid-email')) {
+    return 'Please enter a valid email address.';
+  }
+  if (code.includes('popup-closed-by-user')) {
+    return 'Google sign-in popup was closed before completion.';
+  }
+
+  return message || fallback;
+}
+
 export default function InstantConsult() {
   const [searchParams] = useSearchParams();
   const onboardingCardRef = useRef(null);
@@ -339,7 +368,7 @@ export default function InstantConsult() {
       await loadMessages(token);
       setSendNotice('Sign-in successful. Complete payment to unlock one message.');
     } catch (err) {
-      setAuthError(err.message || 'Google sign-in failed.');
+      setAuthError(humanizeAuthError(err, 'Google sign-in failed.'));
     } finally {
       setAuthLoading(false);
     }
@@ -366,7 +395,7 @@ export default function InstantConsult() {
       await loadMessages(token);
       setSendNotice('Account ready. Complete payment to unlock one message.');
     } catch (err) {
-      setAuthError(err.message || 'Authentication failed.');
+      setAuthError(humanizeAuthError(err, 'Authentication failed.'));
     } finally {
       setAuthLoading(false);
     }
