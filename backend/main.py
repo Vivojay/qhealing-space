@@ -25,6 +25,7 @@ Admin endpoints (require Bearer token from /api/admin/login):
   GET  /api/admin/config                                 -> site config doc
   PUT  /api/admin/config                                 -> update site config
 """
+
 from __future__ import annotations
 
 import csv
@@ -50,7 +51,18 @@ from urllib.parse import quote
 
 import firebase_admin
 import httpx
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from firebase_admin import auth as firebase_auth
@@ -58,6 +70,22 @@ from firebase_admin import credentials, firestore, storage
 from google.api_core import exceptions as gcloud_exc
 from pydantic import BaseModel, EmailStr, Field
 from dotenv import load_dotenv
+from functools import partial
+
+_combined_events_cache: dict[str, Any] = {
+    "ts": 0.0,
+    "data": None,
+}
+_COMBINED_EVENTS_TTL = 12 * 60 * 60  # 12 hours
+
+
+async def _run_blocking(func, *args, **kwargs):
+    return await asyncio.to_thread(partial(func, *args, **kwargs))
+
+
+def _safe_limit(value: int, low: int, high: int) -> int:
+    return max(low, min(int(value), high))
+
 
 try:
     import qrcode
@@ -75,7 +103,9 @@ except Exception:  # pragma: no cover - optional dependency fallback
     panchang_calendar = None
     panchang_daily = None
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 log = logging.getLogger("qhs.backend")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -91,7 +121,9 @@ INSTANT_CONSULT_FEE_INR = 1500
 BOOKING_CONSULT_FEE_INR = 2500
 COMBINED_HEALING_FEE_INR_PER_WISH = 5000
 COMBINED_HEALING_FEE_USD_PER_WISH = 80
-COMBINED_HEALING_MAX_WISHES = max(1, min(int(os.environ.get("COMBINED_HEALING_MAX_WISHES", "40")), 120))
+COMBINED_HEALING_MAX_WISHES = max(
+    1, min(int(os.environ.get("COMBINED_HEALING_MAX_WISHES", "40")), 120)
+)
 COMBINED_HEALING_MAX_WISH_LENGTH = 200
 MAX_CONSULT_REPLY_IMAGES = 10
 MAX_CONSULT_REPLY_IMAGE_BYTES = 8 * 1024 * 1024
@@ -105,7 +137,12 @@ ALLOWED_CONSULT_REPLY_IMAGE_TYPES = {
 }
 
 CONSULT_STATUS_VALUES: tuple[str, ...] = ("new", "inprogress", "done")
-PAYMENT_CLAIM_STATUS_VALUES: tuple[str, ...] = ("pending", "approved", "rejected", "consumed")
+PAYMENT_CLAIM_STATUS_VALUES: tuple[str, ...] = (
+    "pending",
+    "approved",
+    "rejected",
+    "consumed",
+)
 PAYMENT_SESSION_STATUS_VALUES: tuple[str, ...] = (
     "created",
     "awaiting_payment",
@@ -114,7 +151,9 @@ PAYMENT_SESSION_STATUS_VALUES: tuple[str, ...] = (
     "failed",
     "expired",
 )
-PAYMENT_SESSION_TTL_MINUTES = max(5, min(int(os.environ.get("INSTANT_PAYMENT_SESSION_TTL_MINUTES", "30")), 180))
+PAYMENT_SESSION_TTL_MINUTES = max(
+    5, min(int(os.environ.get("INSTANT_PAYMENT_SESSION_TTL_MINUTES", "30")), 180)
+)
 COMBINED_PAYMENT_SESSION_STATUS_VALUES: tuple[str, ...] = (
     "created",
     "awaiting_payment",
@@ -122,7 +161,9 @@ COMBINED_PAYMENT_SESSION_STATUS_VALUES: tuple[str, ...] = (
     "failed",
     "expired",
 )
-COMBINED_PAYMENT_SESSION_TTL_MINUTES = max(5, min(int(os.environ.get("COMBINED_PAYMENT_SESSION_TTL_MINUTES", "45")), 240))
+COMBINED_PAYMENT_SESSION_TTL_MINUTES = max(
+    5, min(int(os.environ.get("COMBINED_PAYMENT_SESSION_TTL_MINUTES", "45")), 240)
+)
 COMBINED_COUNTRY_PROFILE_VALUES: tuple[str, ...] = ("india", "outside_india")
 COMBINED_WISH_STATUS_VALUES: tuple[str, ...] = (
     "draft",
@@ -329,9 +370,18 @@ PANCHANG_INDIA_LOCATION = (
 )
 
 STATIC_QR_OVERRIDES: dict[Decimal, Path] = {
-    Decimal(str(BOOKING_CONSULT_FEE_INR)): PROJECT_ROOT / "attached_assets" / "qr-codes" / "inr-2500-paytm.jpg",
-    Decimal(str(INSTANT_CONSULT_FEE_INR)): PROJECT_ROOT / "attached_assets" / "qr-codes" / "inr-1500-paytm.jpg",
-    Decimal(str(COMBINED_HEALING_FEE_INR_PER_WISH)): PROJECT_ROOT / "attached_assets" / "qr-codes" / "inr-5000-paytm.jpg",
+    Decimal(str(BOOKING_CONSULT_FEE_INR)): PROJECT_ROOT
+    / "attached_assets"
+    / "qr-codes"
+    / "inr-2500-paytm.jpg",
+    Decimal(str(INSTANT_CONSULT_FEE_INR)): PROJECT_ROOT
+    / "attached_assets"
+    / "qr-codes"
+    / "inr-1500-paytm.jpg",
+    Decimal(str(COMBINED_HEALING_FEE_INR_PER_WISH)): PROJECT_ROOT
+    / "attached_assets"
+    / "qr-codes"
+    / "inr-5000-paytm.jpg",
 }
 
 _dynamic_qr_cache: dict[str, bytes] = {}
@@ -357,12 +407,19 @@ def get_firestore() -> firestore.Client:
         try:
             sa_info = json.loads(normalized_sa_json)
         except json.JSONDecodeError as e:
-            raise RuntimeError(f"FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON: {e}") from e
+            raise RuntimeError(
+                f"FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON: {e}"
+            ) from e
         cred = credentials.Certificate(sa_info)
         app_opts = {
-            "projectId": os.environ.get("FIREBASE_PROJECT_ID") or sa_info.get("project_id"),
+            "projectId": os.environ.get("FIREBASE_PROJECT_ID")
+            or sa_info.get("project_id"),
         }
-        storage_bucket = (os.environ.get("FIREBASE_STORAGE_BUCKET") or sa_info.get("storage_bucket") or "").strip()
+        storage_bucket = (
+            os.environ.get("FIREBASE_STORAGE_BUCKET")
+            or sa_info.get("storage_bucket")
+            or ""
+        ).strip()
         if storage_bucket:
             app_opts["storageBucket"] = storage_bucket
         firebase_admin.initialize_app(cred, app_opts)
@@ -429,11 +486,19 @@ async def _fetch_instagram_media(limit: int = 16) -> list[dict[str, Any]]:
             err = r.text
 
         if err_code == 190 and err_subcode == 463:
-            await _maybe_send_instagram_token_warning(reason="Instagram access token is expired")
-            raise HTTPException(503, "Instagram feed is temporarily unavailable (access token expired).")
+            await _maybe_send_instagram_token_warning(
+                reason="Instagram access token is expired"
+            )
+            raise HTTPException(
+                503, "Instagram feed is temporarily unavailable (access token expired)."
+            )
         if err_code == 190:
-            await _maybe_send_instagram_token_warning(reason="Instagram access token is invalid")
-            raise HTTPException(503, "Instagram feed is temporarily unavailable (access token invalid).")
+            await _maybe_send_instagram_token_warning(
+                reason="Instagram access token is invalid"
+            )
+            raise HTTPException(
+                503, "Instagram feed is temporarily unavailable (access token invalid)."
+            )
 
         raise HTTPException(502, f"Instagram Graph API error: {err}")
 
@@ -450,23 +515,31 @@ async def _fetch_instagram_media(limit: int = 16) -> list[dict[str, Any]]:
         thumbnail_url = it.get("thumbnail_url")
         if media_type == "VIDEO" and not media_url:
             continue
-        cleaned.append({
-            "id": it.get("id"),
-            "type": "video" if media_type == "VIDEO" else "image",
-            "media_url": media_url,
-            "thumbnail_url": thumbnail_url or media_url,
-            "permalink": permalink,
-            "caption": (it.get("caption") or "").strip(),
-            "timestamp": it.get("timestamp"),
-            "is_carousel": media_type == "CAROUSEL_ALBUM",
-        })
+        cleaned.append(
+            {
+                "id": it.get("id"),
+                "type": "video" if media_type == "VIDEO" else "image",
+                "media_url": media_url,
+                "thumbnail_url": thumbnail_url or media_url,
+                "permalink": permalink,
+                "caption": (it.get("caption") or "").strip(),
+                "timestamp": it.get("timestamp"),
+                "is_carousel": media_type == "CAROUSEL_ALBUM",
+            }
+        )
     return cleaned
 
 
-async def _get_cached_instagram(limit: int, *, force: bool = False) -> tuple[list[dict[str, Any]], float, bool]:
+async def _get_cached_instagram(
+    limit: int, *, force: bool = False
+) -> tuple[list[dict[str, Any]], float, bool]:
     now = time.time()
     cached = _reels_cache["data"]
-    if not force and cached is not None and (now - _reels_cache["ts"]) < _REEL_CACHE_TTL:
+    if (
+        not force
+        and cached is not None
+        and (now - _reels_cache["ts"]) < _REEL_CACHE_TTL
+    ):
         return cached, _reels_cache["ts"], True
     try:
         items = await _fetch_instagram_media(limit=max(limit, 16))
@@ -501,7 +574,9 @@ def _admin_secret() -> str:
 
 
 def _sign_token(payload: str) -> str:
-    sig = hmac.new(_admin_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
+    sig = hmac.new(
+        _admin_secret().encode(), payload.encode(), hashlib.sha256
+    ).hexdigest()
     return f"{payload}.{sig}"
 
 
@@ -510,7 +585,9 @@ def _verify_token(token: str) -> bool:
         payload, sig = token.rsplit(".", 1)
     except ValueError:
         return False
-    expected = hmac.new(_admin_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
+    expected = hmac.new(
+        _admin_secret().encode(), payload.encode(), hashlib.sha256
+    ).hexdigest()
     if not hmac.compare_digest(expected, sig):
         return False
     try:
@@ -532,7 +609,9 @@ def _issue_token() -> dict[str, Any]:
 
 
 def _instant_payment_provider() -> str:
-    return (os.environ.get("INSTANT_PAYMENT_PROVIDER") or "paytm").strip().lower() or "paytm"
+    return (
+        os.environ.get("INSTANT_PAYMENT_PROVIDER") or "paytm"
+    ).strip().lower() or "paytm"
 
 
 def _instant_payment_webhook_secret() -> str | None:
@@ -579,7 +658,9 @@ def require_client(authorization: str | None = Header(default=None)) -> dict[str
         raise HTTPException(400, "Authenticated profile must include an email")
 
     if not bool(decoded.get("email_verified")):
-        raise HTTPException(403, "Please verify your email before using Instant Consult")
+        raise HTTPException(
+            403, "Please verify your email before using Instant Consult"
+        )
 
     return decoded
 
@@ -637,7 +718,9 @@ def _normalize_payment_reference(raw_value: str) -> str:
     raw = str(raw_value or "").strip().upper()
     compact = re.sub(r"\s+", "", raw)
     if not re.fullmatch(r"[A-Z0-9_-]{6,64}", compact):
-        raise HTTPException(400, "Enter a valid payment reference (6-64 chars, letters/numbers)")
+        raise HTTPException(
+            400, "Enter a valid payment reference (6-64 chars, letters/numbers)"
+        )
     return compact
 
 
@@ -710,7 +793,9 @@ def _is_payment_session_expired(session_data: dict[str, Any]) -> bool:
 
 
 def _combined_payment_provider() -> str:
-    return (os.environ.get("COMBINED_PAYMENT_PROVIDER") or "paytm").strip().lower() or "paytm"
+    return (
+        os.environ.get("COMBINED_PAYMENT_PROVIDER") or "paytm"
+    ).strip().lower() or "paytm"
 
 
 def _combined_payment_webhook_secret() -> str | None:
@@ -734,11 +819,21 @@ def _instant_international_payments_enabled() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
-def _normalize_country_profile(raw_profile: str | None, *, fallback: str = "india") -> str:
+def _normalize_country_profile(
+    raw_profile: str | None, *, fallback: str = "india"
+) -> str:
     value = str(raw_profile or "").strip().lower().replace("-", "_").replace(" ", "_")
     if value in {"india", "in", "indian"}:
         return "india"
-    if value in {"outside_india", "outside", "international", "non_india", "non_indian", "global", "intl"}:
+    if value in {
+        "outside_india",
+        "outside",
+        "international",
+        "non_india",
+        "non_indian",
+        "global",
+        "intl",
+    }:
         return "outside_india"
     return fallback if fallback in COMBINED_COUNTRY_PROFILE_VALUES else "india"
 
@@ -766,7 +861,11 @@ def _resolve_client_display_name(identity: dict[str, Any], email: str) -> str:
 
 
 def _combined_unit_amount(country_profile: str) -> int:
-    return COMBINED_HEALING_FEE_INR_PER_WISH if country_profile == "india" else COMBINED_HEALING_FEE_USD_PER_WISH
+    return (
+        COMBINED_HEALING_FEE_INR_PER_WISH
+        if country_profile == "india"
+        else COMBINED_HEALING_FEE_USD_PER_WISH
+    )
 
 
 def _combined_currency(country_profile: str) -> str:
@@ -820,12 +919,18 @@ def _serialize_combined_wish(doc: Any) -> dict[str, Any]:
     }
 
 
-def _serialize_combined_request(doc: Any, wishes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _serialize_combined_request(
+    doc: Any, wishes: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     data = doc.to_dict() or {}
     wish_rows = list(wishes or [])
-    wish_rows.sort(key=lambda item: (int(item.get("position") or 0), item.get("created_at") or ""))
+    wish_rows.sort(
+        key=lambda item: (int(item.get("position") or 0), item.get("created_at") or "")
+    )
     approved_count = sum(1 for item in wish_rows if item.get("status") == "approved")
-    needs_correction_count = sum(1 for item in wish_rows if item.get("status") == "needs_correction")
+    needs_correction_count = sum(
+        1 for item in wish_rows if item.get("status") == "needs_correction"
+    )
     corrected_count = sum(1 for item in wish_rows if item.get("status") == "corrected")
 
     return {
@@ -833,7 +938,9 @@ def _serialize_combined_request(doc: Any, wishes: list[dict[str, Any]] | None = 
         "uid": data.get("uid") or doc.id,
         "email": data.get("email") or "",
         "display_name": data.get("display_name") or "",
-        "country_profile": _normalize_country_profile(data.get("country_profile"), fallback="india"),
+        "country_profile": _normalize_country_profile(
+            data.get("country_profile"), fallback="india"
+        ),
         "country_code": (data.get("country_code") or "").strip().upper(),
         "ritual_event_id": data.get("ritual_event_id") or None,
         "ritual_event_label": data.get("ritual_event_label") or None,
@@ -878,7 +985,9 @@ def _serialize_combined_payment_session(doc: Any) -> dict[str, Any]:
         "amount": amount_int,
         "currency": data.get("currency") or "INR",
         "wish_count": wish_count,
-        "country_profile": _normalize_country_profile(data.get("country_profile"), fallback="india"),
+        "country_profile": _normalize_country_profile(
+            data.get("country_profile"), fallback="india"
+        ),
         "country_code": (data.get("country_code") or "").strip().upper(),
         "payment_reference": data.get("payment_reference") or None,
         "provider_payment_id": data.get("provider_payment_id") or None,
@@ -891,21 +1000,37 @@ def _serialize_combined_payment_session(doc: Any) -> dict[str, Any]:
     }
 
 
-def _combined_checkout_confirmation_email(request_row: dict[str, Any]) -> dict[str, str]:
-    wishes = request_row.get("wishes") if isinstance(request_row.get("wishes"), list) else []
+def _combined_checkout_confirmation_email(
+    request_row: dict[str, Any],
+) -> dict[str, str]:
+    wishes = (
+        request_row.get("wishes") if isinstance(request_row.get("wishes"), list) else []
+    )
     approved_wishes = [item for item in wishes if item.get("status") == "approved"]
-    ritual_label = request_row.get("ritual_event_label") or request_row.get("ritual_event_id") or "Selected ritual date"
+    ritual_label = (
+        request_row.get("ritual_event_label")
+        or request_row.get("ritual_event_id")
+        or "Selected ritual date"
+    )
     ritual_date = request_row.get("ritual_event_date") or "TBD"
     lunar_label = request_row.get("ritual_hindu_lunar_label") or ""
     currency = _combined_currency(request_row.get("country_profile") or "india")
     amount = _combined_total_amount(
-        _normalize_country_profile(request_row.get("country_profile"), fallback="india"),
+        _normalize_country_profile(
+            request_row.get("country_profile"), fallback="india"
+        ),
         len(approved_wishes),
     )
 
-    wish_lines = "\n".join(
-        [f"{idx + 1}. {str(item.get('text') or '').strip()}" for idx, item in enumerate(approved_wishes)]
-    ) or "No approved wishes recorded."
+    wish_lines = (
+        "\n".join(
+            [
+                f"{idx + 1}. {str(item.get('text') or '').strip()}"
+                for idx, item in enumerate(approved_wishes)
+            ]
+        )
+        or "No approved wishes recorded."
+    )
 
     subject = "[QHS] Combined Healings checkout confirmed"
     text = (
@@ -923,12 +1048,15 @@ def _combined_checkout_confirmation_email(request_row: dict[str, Any]) -> dict[s
         "Quantum Healing Space"
     )
 
-    html_rows = "".join(
-        [
-            f"<li style=\"margin-bottom:8px;\">{html.escape(str(item.get('text') or '').strip())}</li>"
-            for item in approved_wishes
-        ]
-    ) or "<li>No approved wishes recorded.</li>"
+    html_rows = (
+        "".join(
+            [
+                f'<li style="margin-bottom:8px;">{html.escape(str(item.get("text") or "").strip())}</li>'
+                for item in approved_wishes
+            ]
+        )
+        or "<li>No approved wishes recorded.</li>"
+    )
 
     html_body = f"""
 <html>
@@ -947,9 +1075,9 @@ def _combined_checkout_confirmation_email(request_row: dict[str, Any]) -> dict[s
               <td style=\"padding:24px 28px;\">
                 <p style=\"margin:0 0 12px 0;font-size:15px;line-height:24px;color:#1f2a3f;\">Your checkout has been confirmed and your approved wishes are now locked for ritual execution.</p>
                 <p style=\"margin:0 0 8px 0;font-size:13px;color:#4b5a72;\"><strong>Ritual date:</strong> {html.escape(str(ritual_label))} on {html.escape(str(ritual_date))}</p>
-                <p style=\"margin:0 0 8px 0;font-size:13px;color:#4b5a72;\"><strong>Hindu lunar date:</strong> {html.escape(str(lunar_label or 'N/A'))}</p>
+                <p style=\"margin:0 0 8px 0;font-size:13px;color:#4b5a72;\"><strong>Hindu lunar date:</strong> {html.escape(str(lunar_label or "N/A"))}</p>
                 <p style=\"margin:0 0 8px 0;font-size:13px;color:#4b5a72;\"><strong>Total paid:</strong> {html.escape(str(currency))} {html.escape(str(amount))}</p>
-                <p style=\"margin:0 0 12px 0;font-size:13px;color:#4b5a72;\"><strong>Review rounds:</strong> {int(request_row.get('review_count') or 0)}</p>
+                <p style=\"margin:0 0 12px 0;font-size:13px;color:#4b5a72;\"><strong>Review rounds:</strong> {int(request_row.get("review_count") or 0)}</p>
                 <div style=\"margin-top:12px;padding:14px;border:1px solid #dfe8f6;border-radius:10px;background:#f7fbff;\">
                   <p style=\"margin:0 0 8px 0;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#3d5e8e;\">Final approved wishes</p>
                   <ol style=\"margin:0;padding-left:18px;color:#1f2a3f;font-size:14px;line-height:22px;\">{html_rows}</ol>
@@ -974,7 +1102,9 @@ def _send_combined_checkout_emails(request_row: dict[str, Any]) -> bool:
         return False
 
     payload = _combined_checkout_confirmation_email(request_row)
-    client_sent = _send_email([client_email], payload["subject"], payload["text"], html_body=payload["html"])
+    client_sent = _send_email(
+        [client_email], payload["subject"], payload["text"], html_body=payload["html"]
+    )
 
     admin_subject = "[QHS][Combined Healings][PAID] Checkout confirmed"
     admin_body = (
@@ -1000,7 +1130,11 @@ def _combined_hard_delete_request(uid: str) -> None:
         wish_doc.reference.delete()
     request_ref.delete()
 
-    sessions_query = get_firestore().collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION).where("uid", "==", uid)
+    sessions_query = (
+        get_firestore()
+        .collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION)
+        .where("uid", "==", uid)
+    )
     for doc in sessions_query.stream():
         doc.reference.delete()
 
@@ -1029,7 +1163,9 @@ def _combined_request_status_from_wishes(
     return "draft"
 
 
-def _combined_load_request_state(uid: str) -> tuple[Any, Any | None, list[dict[str, Any]], dict[str, Any] | None]:
+def _combined_load_request_state(
+    uid: str,
+) -> tuple[Any, Any | None, list[dict[str, Any]], dict[str, Any] | None]:
     req_ref = _combined_request_ref(uid)
     req_snap = req_ref.get()
     if not req_snap.exists:
@@ -1037,22 +1173,37 @@ def _combined_load_request_state(uid: str) -> tuple[Any, Any | None, list[dict[s
 
     wish_docs = list(_combined_wishes_collection(uid).stream())
     wishes = [_serialize_combined_wish(doc) for doc in wish_docs]
-    wishes.sort(key=lambda item: (int(item.get("position") or 0), item.get("created_at") or ""))
+    wishes.sort(
+        key=lambda item: (int(item.get("position") or 0), item.get("created_at") or "")
+    )
     row = _serialize_combined_request(req_snap, wishes)
     return req_ref, req_snap, wishes, row
 
 
 def _require_panchang_engine() -> None:
-    if panchang_calendar is None or panchang_daily is None or PANCHANG_INDIA_LOCATION is None:
-        raise HTTPException(503, "Holiday engine is unavailable. Install panchang to enable Combined Healings events.")
+    if (
+        panchang_calendar is None
+        or panchang_daily is None
+        or PANCHANG_INDIA_LOCATION is None
+    ):
+        raise HTTPException(
+            503,
+            "Holiday engine is unavailable. Install panchang to enable Combined Healings events.",
+        )
 
 
-def _hindu_lunar_payload(target_date: date, *, cache: dict[date, Any] | None = None) -> dict[str, Any]:
+def _hindu_lunar_payload(
+    target_date: date, *, cache: dict[date, Any] | None = None
+) -> dict[str, Any]:
     _require_panchang_engine()
     local_cache = cache if isinstance(cache, dict) else {}
     entry = local_cache.get(target_date)
     if entry is None:
-        entry = panchang_daily.compute(target_date, PANCHANG_INDIA_LOCATION, calendar_system=PanchangCalendarSystem.AMANT)
+        entry = panchang_daily.compute(
+            target_date,
+            PANCHANG_INDIA_LOCATION,
+            calendar_system=PanchangCalendarSystem.AMANT,
+        )
         local_cache[target_date] = entry
 
     masa = getattr(entry, "masa", None)
@@ -1100,7 +1251,11 @@ def _find_lunar_month_shukla_pratipada(
     while cursor.year == year:
         payload = local_cache.get(cursor)
         if payload is None:
-            payload = panchang_daily.compute(cursor, PANCHANG_INDIA_LOCATION, calendar_system=PanchangCalendarSystem.AMANT)
+            payload = panchang_daily.compute(
+                cursor,
+                PANCHANG_INDIA_LOCATION,
+                calendar_system=PanchangCalendarSystem.AMANT,
+            )
             local_cache[cursor] = payload
 
         masa = getattr(payload, "masa", None)
@@ -1116,124 +1271,152 @@ def _find_lunar_month_shukla_pratipada(
 
 
 def _build_combined_events(limit: int) -> list[dict[str, Any]]:
-    _require_panchang_engine()
-    safe_limit = max(1, min(limit, 25))
-    today = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30))).date()
-
-    event_rows: list[dict[str, Any]] = []
-    panchang_cache: dict[date, Any] = {}
-
-    year = today.year
-    while year <= today.year + 6:
-        festival_rows = panchang_calendar.compute_festivals(
-            year,
-            PANCHANG_INDIA_LOCATION,
-            calendar_system=PanchangCalendarSystem.PURNIMANT,
+    started = time.perf_counter()
+    try:
+        _require_panchang_engine()
+        safe_limit = _safe_limit(limit, 1, 25)
+        today = (
+            datetime.now(timezone.utc)
+            .astimezone(timezone(timedelta(hours=5, minutes=30)))
+            .date()
         )
-        by_festival_id = {str(item.id): item for item in festival_rows}
 
-        for key, festival_id in COMBINED_PANCHANG_EVENT_MAP.items():
-            item = by_festival_id.get(festival_id)
-            if not item:
+        event_rows: list[dict[str, Any]] = []
+        panchang_cache: dict[date, Any] = {}
+
+        # Keep the horizon small. This endpoint should not scan far-future years on demand.
+        year = today.year
+        max_year = today.year + 2
+
+        while year <= max_year:
+            log.info("combined-events: processing year=%s", year)
+
+            festival_rows = panchang_calendar.compute_festivals(
+                year,
+                PANCHANG_INDIA_LOCATION,
+                calendar_system=PanchangCalendarSystem.PURNIMANT,
+            )
+            by_festival_id = {str(item.id): item for item in festival_rows}
+
+            for key, festival_id in COMBINED_PANCHANG_EVENT_MAP.items():
+                item = by_festival_id.get(festival_id)
+                if not item:
+                    continue
+                event_date = (
+                    item.date if isinstance(item.date, date) else date(year, 1, 1)
+                )
+                lunar = _hindu_lunar_payload(event_date, cache=panchang_cache)
+                event_rows.append(
+                    {
+                        "id": key,
+                        "label": COMBINED_EVENT_LABELS.get(key) or key,
+                        "date": event_date,
+                        "hindu_lunar": lunar,
+                        "source": "panchang",
+                    }
+                )
+
+            # Keep formula events
+            christmas = date(year, 12, 25)
+            easter = _western_easter(year)
+
+            event_rows.append(
+                {
+                    "id": "christmas",
+                    "label": COMBINED_EVENT_LABELS["christmas"],
+                    "date": christmas,
+                    "hindu_lunar": _hindu_lunar_payload(
+                        christmas, cache=panchang_cache
+                    ),
+                    "source": "formula",
+                }
+            )
+            event_rows.append(
+                {
+                    "id": "easter",
+                    "label": COMBINED_EVENT_LABELS["easter"],
+                    "date": easter,
+                    "hindu_lunar": _hindu_lunar_payload(easter, cache=panchang_cache),
+                    "source": "formula",
+                }
+            )
+
+            upcoming_count = sum(
+                1 for row in event_rows if row.get("date") and row["date"] >= today
+            )
+            log.info("combined-events: year=%s upcoming_count=%s", year, upcoming_count)
+
+            if upcoming_count >= safe_limit + 8:
+                break
+
+            year += 1
+
+        dedupe: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in event_rows:
+            event_date = row.get("date")
+            if not isinstance(event_date, date):
                 continue
-            event_date = item.date if isinstance(item.date, date) else date(year, 1, 1)
-            lunar = _hindu_lunar_payload(event_date, cache=panchang_cache)
-            event_rows.append(
+            key = (str(row.get("id") or ""), event_date.isoformat())
+            if key not in dedupe:
+                dedupe[key] = row
+
+        upcoming = [
+            row
+            for row in dedupe.values()
+            if isinstance(row.get("date"), date) and row["date"] >= today
+        ]
+        upcoming.sort(key=lambda item: (item["date"], item.get("label") or ""))
+
+        output: list[dict[str, Any]] = []
+        for row in upcoming[:safe_limit]:
+            dt = row["date"]
+            lunar = (
+                row.get("hindu_lunar")
+                if isinstance(row.get("hindu_lunar"), dict)
+                else {}
+            )
+            output.append(
                 {
-                    "id": key,
-                    "label": COMBINED_EVENT_LABELS.get(key) or key,
-                    "date": event_date,
-                    "hindu_lunar": lunar,
-                    "source": "panchang",
+                    "id": row.get("id"),
+                    "label": row.get("label"),
+                    "date": dt.isoformat(),
+                    "hindu_lunar": {
+                        "masa": lunar.get("masa") or "",
+                        "paksha": lunar.get("paksha") or "",
+                        "tithi": lunar.get("tithi") or "",
+                        "label": lunar.get("label") or "",
+                    },
+                    "source": row.get("source") or "panchang",
                 }
             )
 
-        ashada_start = _find_lunar_month_shukla_pratipada(year, 4, cache=panchang_cache)
-        if ashada_start:
-            event_rows.append(
-                {
-                    "id": "gupta_navaratri_ashada",
-                    "label": COMBINED_EVENT_LABELS["gupta_navaratri_ashada"],
-                    "date": ashada_start,
-                    "hindu_lunar": _hindu_lunar_payload(ashada_start, cache=panchang_cache),
-                    "source": "panchang",
-                }
-            )
+        return output
+    finally:
+        log.info("combined-events: total_seconds=%.3f", time.perf_counter() - started)
 
-        magha_start = _find_lunar_month_shukla_pratipada(year, 11, cache=panchang_cache)
-        if magha_start:
-            event_rows.append(
-                {
-                    "id": "gupta_navaratri_magha",
-                    "label": COMBINED_EVENT_LABELS["gupta_navaratri_magha"],
-                    "date": magha_start,
-                    "hindu_lunar": _hindu_lunar_payload(magha_start, cache=panchang_cache),
-                    "source": "panchang",
-                }
-            )
 
-        christmas = date(year, 12, 25)
-        event_rows.append(
-            {
-                "id": "christmas",
-                "label": COMBINED_EVENT_LABELS["christmas"],
-                "date": christmas,
-                "hindu_lunar": _hindu_lunar_payload(christmas, cache=panchang_cache),
-                "source": "formula",
-            }
-        )
+def _get_cached_combined_events(limit: int) -> list[dict[str, Any]]:
+    safe_limit = _safe_limit(limit, 1, 25)
+    now = time.time()
+    cached = _combined_events_cache.get("data")
 
-        easter = _western_easter(year)
-        event_rows.append(
-            {
-                "id": "easter",
-                "label": COMBINED_EVENT_LABELS["easter"],
-                "date": easter,
-                "hindu_lunar": _hindu_lunar_payload(easter, cache=panchang_cache),
-                "source": "formula",
-            }
-        )
+    if (
+        cached is not None
+        and (now - _combined_events_cache["ts"]) < _COMBINED_EVENTS_TTL
+    ):
+        return list(cached)[:safe_limit]
 
-        upcoming_count = sum(1 for row in event_rows if row.get("date") and row["date"] >= today)
-        if upcoming_count >= safe_limit + 8:
-            break
-        year += 1
-
-    dedupe: dict[tuple[str, str], dict[str, Any]] = {}
-    for row in event_rows:
-        event_date = row.get("date")
-        if not isinstance(event_date, date):
-            continue
-        key = (str(row.get("id") or ""), event_date.isoformat())
-        if key not in dedupe:
-            dedupe[key] = row
-
-    upcoming = [row for row in dedupe.values() if isinstance(row.get("date"), date) and row["date"] >= today]
-    upcoming.sort(key=lambda item: (item["date"], item.get("label") or ""))
-
-    output: list[dict[str, Any]] = []
-    for row in upcoming[:safe_limit]:
-        dt = row["date"]
-        lunar = row.get("hindu_lunar") if isinstance(row.get("hindu_lunar"), dict) else {}
-        output.append(
-            {
-                "id": row.get("id"),
-                "label": row.get("label"),
-                "date": dt.isoformat(),
-                "hindu_lunar": {
-                    "masa": lunar.get("masa") or "",
-                    "paksha": lunar.get("paksha") or "",
-                    "tithi": lunar.get("tithi") or "",
-                    "label": lunar.get("label") or "",
-                },
-                "source": row.get("source") or "panchang",
-            }
-        )
-    return output
+    rows = _build_combined_events(25)
+    _combined_events_cache["data"] = rows
+    _combined_events_cache["ts"] = now
+    return list(rows)[:safe_limit]
 
 
 def _combined_international_payment_message(service_name: str) -> str:
-    rails = ", ".join(str(item.get("name") or "").strip() for item in COMBINED_INTERNATIONAL_PAYMENT_RAILS)
+    rails = ", ".join(
+        str(item.get("name") or "").strip()
+        for item in COMBINED_INTERNATIONAL_PAYMENT_RAILS
+    )
     return (
         f"{service_name} international checkout is currently disabled. "
         f"Use India-side transfer rails ({rails}) and contact support for manual confirmation."
@@ -1253,7 +1436,11 @@ def _resolve_geo_hint_from_request(request: Request) -> dict[str, Any]:
     detected_source = "fallback"
     for header_name in header_sources:
         value = str(request.headers.get(header_name) or "").strip().upper()
-        if value and value not in {"XX", "ZZ", "T1"} and re.fullmatch(r"[A-Z]{2}", value):
+        if (
+            value
+            and value not in {"XX", "ZZ", "T1"}
+            and re.fullmatch(r"[A-Z]{2}", value)
+        ):
             detected_code = value
             detected_source = header_name
             break
@@ -1312,7 +1499,9 @@ def _signed_url_for_storage_path(path: str) -> str | None:
 
     try:
         blob = get_storage_bucket().blob(path)
-        signed_url = blob.generate_signed_url(version="v4", expiration=timedelta(days=14), method="GET")
+        signed_url = blob.generate_signed_url(
+            version="v4", expiration=timedelta(days=14), method="GET"
+        )
         _signed_url_cache[path] = (signed_url, now_epoch + 6 * 60 * 60)
         return signed_url
     except Exception as exc:
@@ -1320,10 +1509,14 @@ def _signed_url_for_storage_path(path: str) -> str | None:
         return None
 
 
-async def _upload_consult_reply_images(message_id: str, files: list[UploadFile]) -> list[dict[str, Any]]:
+async def _upload_consult_reply_images(
+    message_id: str, files: list[UploadFile]
+) -> list[dict[str, Any]]:
     uploads = [f for f in files if f and (f.filename or "").strip()]
     if len(uploads) > MAX_CONSULT_REPLY_IMAGES:
-        raise HTTPException(400, f"Maximum {MAX_CONSULT_REPLY_IMAGES} images are allowed")
+        raise HTTPException(
+            400, f"Maximum {MAX_CONSULT_REPLY_IMAGES} images are allowed"
+        )
 
     if not uploads:
         return []
@@ -1331,13 +1524,17 @@ async def _upload_consult_reply_images(message_id: str, files: list[UploadFile])
     try:
         bucket = get_storage_bucket()
     except RuntimeError as exc:
-        raise HTTPException(503, "Image upload is not configured: set FIREBASE_STORAGE_BUCKET") from exc
+        raise HTTPException(
+            503, "Image upload is not configured: set FIREBASE_STORAGE_BUCKET"
+        ) from exc
 
     results: list[dict[str, Any]] = []
     for idx, upload in enumerate(uploads):
         content_type = (upload.content_type or "").lower().strip()
         if content_type not in ALLOWED_CONSULT_REPLY_IMAGE_TYPES:
-            raise HTTPException(400, f"Unsupported image type: {upload.content_type or 'unknown'}")
+            raise HTTPException(
+                400, f"Unsupported image type: {upload.content_type or 'unknown'}"
+            )
 
         raw = await upload.read()
         await upload.close()
@@ -1384,7 +1581,9 @@ def _serialize_reply_images(images: list[dict[str, Any]]) -> list[dict[str, Any]
     return rows
 
 
-def _email_image_content_type(raw_content_type: str | None, name: str | None = None) -> str:
+def _email_image_content_type(
+    raw_content_type: str | None, name: str | None = None
+) -> str:
     content_type = str(raw_content_type or "").split(";", 1)[0].strip().lower()
     if content_type in ALLOWED_CONSULT_REPLY_IMAGE_TYPES:
         return content_type
@@ -1406,13 +1605,17 @@ def _reply_image_bytes_for_email(image: dict[str, Any]) -> tuple[bytes, str] | N
     if not path:
         return None
 
-    content_type = _email_image_content_type(image.get("content_type"), image.get("name"))
+    content_type = _email_image_content_type(
+        image.get("content_type"), image.get("name")
+    )
     try:
         blob = get_storage_bucket().blob(path)
         raw = blob.download_as_bytes()
         content_type = _email_image_content_type(blob.content_type, image.get("name"))
     except Exception as exc:
-        log.warning("Unable to load consult reply image for inline email %s: %s", path, exc)
+        log.warning(
+            "Unable to load consult reply image for inline email %s: %s", path, exc
+        )
         return None
 
     if not raw:
@@ -1431,15 +1634,29 @@ def _reply_image_bytes_for_email(image: dict[str, Any]) -> tuple[bytes, str] | N
 
 
 def _build_consult_reply_client_email(message_data: dict[str, Any]) -> dict[str, Any]:
-    reply = (message_data.get("admin_reply") or {}) if isinstance(message_data.get("admin_reply"), dict) else {}
+    reply = (
+        (message_data.get("admin_reply") or {})
+        if isinstance(message_data.get("admin_reply"), dict)
+        else {}
+    )
     reply_text = (reply.get("text") or "").strip()
     images = [img for img in (reply.get("images") or []) if isinstance(img, dict)]
 
-    type_label = str(message_data.get("type_label") or message_data.get("type_id") or "Instant Consult")
+    type_label = str(
+        message_data.get("type_label")
+        or message_data.get("type_id")
+        or "Instant Consult"
+    )
     ref_id = str(message_data.get("id") or "").strip() or "N/A"
-    replied_at = _iso_value(reply.get("replied_at")) or _iso_value(message_data.get("updated_at")) or "Just now"
+    replied_at = (
+        _iso_value(reply.get("replied_at"))
+        or _iso_value(message_data.get("updated_at"))
+        or "Just now"
+    )
 
-    reply_text_html = html.escape(reply_text or "(No text provided)").replace("\n", "<br>")
+    reply_text_html = html.escape(reply_text or "(No text provided)").replace(
+        "\n", "<br>"
+    )
     ref_id_html = html.escape(ref_id)
     type_label_html = html.escape(type_label)
     replied_at_html = html.escape(replied_at)
@@ -1450,7 +1667,10 @@ def _build_consult_reply_client_email(message_data: dict[str, Any]) -> dict[str,
     ref_slug = re.sub(r"[^a-z0-9-]+", "-", ref_id.lower()).strip("-") or "reply"
 
     for idx, image in enumerate(images, start=1):
-        image_name = str(image.get("name") or f"Supporting image {idx}").strip() or f"Supporting image {idx}"
+        image_name = (
+            str(image.get("name") or f"Supporting image {idx}").strip()
+            or f"Supporting image {idx}"
+        )
         image_name_html = html.escape(image_name)
         image_url = str(image.get("url") or "").strip()
         image_url_html = html.escape(image_url)
@@ -1460,7 +1680,9 @@ def _build_consult_reply_client_email(message_data: dict[str, Any]) -> dict[str,
             loaded = _reply_image_bytes_for_email(image)
             if loaded:
                 raw, content_type = loaded
-                subtype = content_type.split("/", 1)[1] if "/" in content_type else "jpeg"
+                subtype = (
+                    content_type.split("/", 1)[1] if "/" in content_type else "jpeg"
+                )
                 subtype = subtype.split(";", 1)[0].strip().lower() or "jpeg"
                 embed_cid = f"qhs-consult-{ref_slug}-{idx}-{secrets.token_hex(4)}"
                 safe_name = _safe_storage_name(image_name)
@@ -1486,14 +1708,16 @@ def _build_consult_reply_client_email(message_data: dict[str, Any]) -> dict[str,
                 f"Open supporting image {idx}</a>"
             )
         else:
-            media_markup = '<span style="color:#6c7789;">Supporting image unavailable.</span>'
+            media_markup = (
+                '<span style="color:#6c7789;">Supporting image unavailable.</span>'
+            )
 
         fallback_markup = ""
         if image_url:
             fallback_markup = (
                 '<p style="margin:8px 0 0 0;font-size:12px;line-height:18px;color:#5b6578;">'
                 f'If the image does not render, <a href="{image_url_html}" style="color:#1f4f9a;text-decoration:underline;">open it here</a>.'
-                '</p>'
+                "</p>"
             )
 
         image_blocks.append(
@@ -1513,7 +1737,11 @@ def _build_consult_reply_client_email(message_data: dict[str, Any]) -> dict[str,
             text_image_line = f"{text_image_line} - unavailable"
         text_image_lines.append(text_image_line)
 
-    text_image_block = "\n".join(text_image_lines) if text_image_lines else "No supporting images were attached."
+    text_image_block = (
+        "\n".join(text_image_lines)
+        if text_image_lines
+        else "No supporting images were attached."
+    )
     image_section_html = ""
     if image_blocks:
         image_section_html = (
@@ -1608,7 +1836,9 @@ def _smtp_settings() -> dict[str, Any]:
         "port": int((os.environ.get("SMTP_PORT") or "465").strip() or 465),
         "username": (os.environ.get("SMTP_USERNAME") or "").strip(),
         "password": (os.environ.get("SMTP_PASSWORD") or "").strip(),
-        "from_addr": (os.environ.get("SMTP_FROM") or "no-reply@quantumhealingspace.com").strip(),
+        "from_addr": (
+            os.environ.get("SMTP_FROM") or "no-reply@quantumhealingspace.com"
+        ).strip(),
     }
 
 
@@ -1643,14 +1873,21 @@ def _send_email(
             if not isinstance(raw, (bytes, bytearray)):
                 continue
 
-            content_type = str(image.get("content_type") or "").split(";", 1)[0].strip().lower()
+            content_type = (
+                str(image.get("content_type") or "").split(";", 1)[0].strip().lower()
+            )
             if not content_type.startswith("image/"):
                 continue
 
             subtype = content_type.split("/", 1)[1] if "/" in content_type else "jpeg"
             subtype = subtype.strip().lower() or "jpeg"
-            cid = str(image.get("cid") or "").strip() or f"qhs-inline-{secrets.token_hex(8)}"
-            filename = _safe_storage_name(str(image.get("name") or f"image-{cid}.{subtype}"))
+            cid = (
+                str(image.get("cid") or "").strip()
+                or f"qhs-inline-{secrets.token_hex(8)}"
+            )
+            filename = _safe_storage_name(
+                str(image.get("name") or f"image-{cid}.{subtype}")
+            )
 
             try:
                 html_part.add_related(
@@ -1665,7 +1902,9 @@ def _send_email(
 
     try:
         if settings["port"] == 465:
-            with smtplib.SMTP_SSL(settings["host"], settings["port"], context=ssl.create_default_context()) as server:
+            with smtplib.SMTP_SSL(
+                settings["host"], settings["port"], context=ssl.create_default_context()
+            ) as server:
                 server.login(settings["username"], settings["password"])
                 server.send_message(msg)
         else:
@@ -1728,14 +1967,20 @@ async def _maybe_send_instagram_token_warning(*, reason: str | None = None) -> N
 
     today = datetime.now(timezone.utc).date().isoformat()
     try:
-        state = await asyncio.to_thread(_get_doc, "ops_alerts", "instagram_token_warning")
+        state = await asyncio.to_thread(
+            _get_doc, "ops_alerts", "instagram_token_warning"
+        )
     except Exception:
         state = {}
 
     if state.get("last_sent_date") == today:
         return
 
-    expires_at_iso = datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat() if expires_at else "Unknown"
+    expires_at_iso = (
+        datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat()
+        if expires_at
+        else "Unknown"
+    )
     reason_text = reason or "Instagram token is within the 15-day warning window."
     left_text = "Unknown" if days_left is None else str(days_left)
 
@@ -1774,6 +2019,7 @@ async def _maybe_send_instagram_token_warning(*, reason: str | None = None) -> N
             )
         except Exception:
             log.warning("Could not persist instagram token warning state")
+
 
 def _format_amount_for_upi(amount: Decimal) -> str:
     normalized = amount.quantize(Decimal("0.01"))
@@ -1858,14 +2104,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.on_event("startup")
 async def _startup_background_tasks() -> None:
     global _instagram_warning_task
-    if os.environ.get("DISABLE_INSTAGRAM_WARNING_LOOP", "").strip().lower() in {"1", "true", "yes", "on"}:
+    if os.environ.get("DISABLE_INSTAGRAM_WARNING_LOOP", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
         log.info("Instagram warning loop disabled by env")
         return
     if _instagram_warning_task is None:
         _instagram_warning_task = asyncio.create_task(_instagram_warning_loop())
+
 
 @app.on_event("shutdown")
 async def _shutdown_background_tasks() -> None:
@@ -1878,8 +2131,11 @@ async def _shutdown_background_tasks() -> None:
             pass
         _instagram_warning_task = None
 
+
 @app.exception_handler(gcloud_exc.PermissionDenied)
-async def _gcloud_permission_denied(_request: Request, exc: gcloud_exc.PermissionDenied):
+async def _gcloud_permission_denied(
+    _request: Request, exc: gcloud_exc.PermissionDenied
+):
     msg = str(exc)
     if "firestore.googleapis.com" in msg or "Firestore API" in msg:
         return JSONResponse(
@@ -1893,14 +2149,21 @@ async def _gcloud_permission_denied(_request: Request, exc: gcloud_exc.Permissio
                 "code": "firestore_disabled",
             },
         )
-    return JSONResponse(status_code=403, content={"detail": msg, "code": "permission_denied"})
+    return JSONResponse(
+        status_code=403, content={"detail": msg, "code": "permission_denied"}
+    )
 
 
 @app.exception_handler(gcloud_exc.FailedPrecondition)
-async def _gcloud_failed_precondition(_request: Request, exc: gcloud_exc.FailedPrecondition):
+async def _gcloud_failed_precondition(
+    _request: Request, exc: gcloud_exc.FailedPrecondition
+):
     return JSONResponse(
         status_code=503,
-        content={"detail": f"Firestore is not ready: {exc}", "code": "firestore_not_ready"},
+        content={
+            "detail": f"Firestore is not ready: {exc}",
+            "code": "firestore_not_ready",
+        },
     )
 
 
@@ -1909,8 +2172,16 @@ async def _gcloud_call_error(_request: Request, exc: gcloud_exc.GoogleAPICallErr
     log.error("Google API call error: %s", exc)
     return JSONResponse(
         status_code=502,
-        content={"detail": f"Google API error: {exc.message or str(exc)}", "code": "google_api_error"},
+        content={
+            "detail": f"Google API error: {exc.message or str(exc)}",
+            "code": "google_api_error",
+        },
     )
+
+
+@app.get("/")
+async def root() -> dict[str, Any]:
+    return {"ok": True, "message": "QHS backend is running"}
 
 
 @app.get("/api/health")
@@ -1950,7 +2221,12 @@ async def get_reels(limit: int = 16) -> dict[str, Any]:
                 "curated": True,
             }
 
-    return {"data": items[:limit], "cached": cached, "fetched_at": fetched_at, "curated": False}
+    return {
+        "data": items[:limit],
+        "cached": cached,
+        "fetched_at": fetched_at,
+        "curated": False,
+    }
 
 
 class NewsletterSubscribeRequest(BaseModel):
@@ -1960,21 +2236,26 @@ class NewsletterSubscribeRequest(BaseModel):
 
 @app.post("/api/newsletter/subscribe")
 async def newsletter_subscribe(body: NewsletterSubscribeRequest) -> dict[str, Any]:
-    db = get_firestore()
-    coll = db.collection("newsletter_subscribers")
-    email_norm = body.email.lower().strip()
-    doc_ref = coll.document(email_norm)
-    snap = doc_ref.get()
-    if snap.exists:
-        return {"ok": True, "already_subscribed": True, "email": email_norm}
+    def _op() -> dict[str, Any]:
+        db = get_firestore()
+        coll = db.collection("newsletter_subscribers")
+        email_norm = body.email.lower().strip()
+        doc_ref = coll.document(email_norm)
+        snap = doc_ref.get()
+        if snap.exists:
+            return {"ok": True, "already_subscribed": True, "email": email_norm}
 
-    doc_ref.set({
-        "email": email_norm,
-        "source": body.source or "footer",
-        "subscribed_at": firestore.SERVER_TIMESTAMP,
-    })
-    log.info("Newsletter subscriber added: %s", email_norm)
-    return {"ok": True, "already_subscribed": False, "email": email_norm}
+        doc_ref.set(
+            {
+                "email": email_norm,
+                "source": body.source or "footer",
+                "subscribed_at": firestore.SERVER_TIMESTAMP,
+            }
+        )
+        log.info("Newsletter subscriber added: %s", email_norm)
+        return {"ok": True, "already_subscribed": False, "email": email_norm}
+
+    return await _run_blocking(_op)
 
 
 @app.get("/api/geo/country")
@@ -1991,12 +2272,16 @@ async def geo_country_hint(request: Request) -> dict[str, Any]:
 
 @app.get("/api/combined-healings/events")
 async def combined_healings_events(limit: int = 10) -> dict[str, Any]:
-    rows = _build_combined_events(limit)
-    return {
-        "data": rows,
-        "count": len(rows),
-        "source": "panchang+formula",
-    }
+    try:
+        rows = await _run_blocking(_get_cached_combined_events, limit)
+        return {
+            "data": rows,
+            "count": len(rows),
+            "source": "panchang+formula+cache",
+        }
+    except Exception as exc:
+        log.exception("combined-healings/events failed")
+        raise HTTPException(500, f"combined-healings/events failed: {exc}")
 
 
 class InstantConsultCreateRequest(BaseModel):
@@ -2050,7 +2335,9 @@ class CombinedHealingUpsertRequest(BaseModel):
     ritual_hindu_lunar_label: str | None = Field(default=None, max_length=180)
     country_profile: str | None = Field(default=None, max_length=32)
     country_code: str | None = Field(default=None, max_length=8)
-    wishes: list[CombinedHealingWishInput] = Field(default_factory=list, max_length=COMBINED_HEALING_MAX_WISHES)
+    wishes: list[CombinedHealingWishInput] = Field(
+        default_factory=list, max_length=COMBINED_HEALING_MAX_WISHES
+    )
 
 
 class CombinedHealingReviewSubmitRequest(BaseModel):
@@ -2063,6 +2350,9 @@ class CombinedHealingReviewSubmitRequest(BaseModel):
 class CombinedHealingCheckoutSessionRequest(BaseModel):
     country_profile: str | None = Field(default=None, max_length=32)
     country_code: str | None = Field(default=None, max_length=8)
+    selected_wish_ids: list[str] = Field(
+        default_factory=list, max_length=COMBINED_HEALING_MAX_WISHES
+    )
 
 
 class CombinedHealingPaymentWebhookRequest(BaseModel):
@@ -2078,7 +2368,9 @@ class CombinedHealingPaymentWebhookRequest(BaseModel):
 
 class CombinedHealingAdminReviewRequest(BaseModel):
     decision: str = Field(min_length=3, max_length=32)
-    selected_wish_ids: list[str] = Field(default_factory=list, max_length=COMBINED_HEALING_MAX_WISHES)
+    selected_wish_ids: list[str] = Field(
+        default_factory=list, max_length=COMBINED_HEALING_MAX_WISHES
+    )
     select_all: bool = False
     invert_selection: bool = False
     note: str | None = Field(default=None, max_length=500)
@@ -2091,8 +2383,12 @@ class CombinedHealingAdminSubmitReviewRequest(BaseModel):
 def _serialize_consult_message(doc: Any) -> dict[str, Any]:
     data = doc.to_dict() or {}
     thread_type_raw = str(data.get("thread_type_id") or "").strip().lower()
-    thread_type_id = _resolve_consult_thread_type_id(thread_type_raw) or _resolve_consult_thread_type_id(data.get("type_id"))
-    reply_raw = data.get("admin_reply") if isinstance(data.get("admin_reply"), dict) else None
+    thread_type_id = _resolve_consult_thread_type_id(
+        thread_type_raw
+    ) or _resolve_consult_thread_type_id(data.get("type_id"))
+    reply_raw = (
+        data.get("admin_reply") if isinstance(data.get("admin_reply"), dict) else None
+    )
     admin_reply = None
     if reply_raw:
         admin_reply = {
@@ -2119,7 +2415,9 @@ def _serialize_consult_message(doc: Any) -> dict[str, Any]:
         "payment_reference": data.get("payment_reference"),
         "payment_claim_id": data.get("payment_claim_id") or None,
         "payment_session_id": data.get("payment_session_id") or None,
-        "payment_verified": bool(data.get("payment_claim_id") or data.get("payment_session_id")),
+        "payment_verified": bool(
+            data.get("payment_claim_id") or data.get("payment_session_id")
+        ),
         "created_at": _iso_value(data.get("created_at")),
         "updated_at": _iso_value(data.get("updated_at")),
         "admin_reply": admin_reply,
@@ -2172,7 +2470,9 @@ def _instant_consult_client_email(message_data: dict[str, Any]) -> str:
 
 def _send_instant_consult_notifications(message_data: dict[str, Any]) -> None:
     admin_subject = f"[QHS][Instant Consult][NEW] {message_data.get('type_label') or message_data.get('type_id')}"
-    _send_email([ADMIN_ALERT_EMAIL], admin_subject, _instant_consult_admin_email(message_data))
+    _send_email(
+        [ADMIN_ALERT_EMAIL], admin_subject, _instant_consult_admin_email(message_data)
+    )
 
     client_email = (message_data.get("email") or "").strip().lower()
     if client_email:
@@ -2198,11 +2498,17 @@ async def consult_my_messages(
     uid = str(identity.get("uid"))
     safe_limit = max(1, min(limit, 200))
     scoped_type_id = _normalize_consult_type_id(type_id) if type_id else None
-    fetch_limit = safe_limit if not scoped_type_id else min(500, max(safe_limit, safe_limit * 6))
+    fetch_limit = (
+        safe_limit if not scoped_type_id else min(500, max(safe_limit, safe_limit * 6))
+    )
 
     query = db.collection("instant_consult_messages").where("uid", "==", uid)
     try:
-        docs = list(query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(fetch_limit).stream())
+        docs = list(
+            query.order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(fetch_limit)
+            .stream()
+        )
     except Exception:
         docs = list(query.limit(fetch_limit).stream())
 
@@ -2215,7 +2521,9 @@ async def consult_my_messages(
 
 
 @app.get("/api/consult/payments/capabilities")
-async def consult_payment_capabilities(identity: dict[str, Any] = Depends(require_client)) -> dict[str, Any]:
+async def consult_payment_capabilities(
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
     _ = identity
     automation_enabled = _instant_payment_automation_enabled()
     intl_enabled = _instant_international_payments_enabled()
@@ -2240,21 +2548,42 @@ async def consult_payment_capabilities(identity: dict[str, Any] = Depends(requir
     }
 
 
+@app.post("/api/admin/combined-healings/events/refresh")
+async def admin_refresh_combined_events(_=Depends(require_admin)) -> dict[str, Any]:
+    try:
+        rows = await _run_blocking(_build_combined_events, 25)
+        _combined_events_cache["data"] = rows
+        _combined_events_cache["ts"] = time.time()
+        return {"ok": True, "count": len(rows)}
+    except Exception as exc:
+        log.exception("admin refresh combined events failed")
+        raise HTTPException(500, f"combined-healings event refresh failed: {exc}")
+
+
 @app.post("/api/consult/payments/session")
 async def consult_create_payment_session(
     body: InstantConsultPaymentSessionRequest,
     identity: dict[str, Any] = Depends(require_client),
 ) -> dict[str, Any]:
     if body.payment_amount != INSTANT_CONSULT_FEE_INR:
-        raise HTTPException(400, f"Instant Consult requires INR {INSTANT_CONSULT_FEE_INR} per message")
+        raise HTTPException(
+            400, f"Instant Consult requires INR {INSTANT_CONSULT_FEE_INR} per message"
+        )
 
     uid = str(identity.get("uid"))
     email = str(identity.get("email") or "").strip().lower()
-    requested_profile = _normalize_country_profile(body.country_profile, fallback="india")
+    requested_profile = _normalize_country_profile(
+        body.country_profile, fallback="india"
+    )
     if body.country_code:
         requested_profile = _profile_from_country_code(body.country_code)
-    if requested_profile == "outside_india" and not _instant_international_payments_enabled():
-        raise HTTPException(409, _combined_international_payment_message("Instant Consult"))
+    if (
+        requested_profile == "outside_india"
+        and not _instant_international_payments_enabled()
+    ):
+        raise HTTPException(
+            409, _combined_international_payment_message("Instant Consult")
+        )
 
     display_name = (
         str(identity.get("name") or "").strip()
@@ -2281,7 +2610,11 @@ async def consult_create_payment_session(
         "expires_at": expires_at,
     }
 
-    ref = get_firestore().collection("instant_consult_payment_sessions").document(session_id)
+    ref = (
+        get_firestore()
+        .collection("instant_consult_payment_sessions")
+        .document(session_id)
+    )
     ref.set(payload, merge=True)
     snap = ref.get()
     session = _serialize_payment_session(snap)
@@ -2292,7 +2625,9 @@ async def consult_create_payment_session(
         "data": {
             **session,
             "qr_src": qr_src,
-            "upi_intent": _upi_intent_for_amount(Decimal(INSTANT_CONSULT_FEE_INR), payment_ref=session_id),
+            "upi_intent": _upi_intent_for_amount(
+                Decimal(INSTANT_CONSULT_FEE_INR), payment_ref=session_id
+            ),
         },
         "automation_enabled": _instant_payment_automation_enabled(),
         "manual_claim_enabled": _instant_manual_payment_claim_enabled(),
@@ -2311,7 +2646,11 @@ async def consult_get_payment_session(
     session_id: str,
     identity: dict[str, Any] = Depends(require_client),
 ) -> dict[str, Any]:
-    ref = get_firestore().collection("instant_consult_payment_sessions").document(session_id)
+    ref = (
+        get_firestore()
+        .collection("instant_consult_payment_sessions")
+        .document(session_id)
+    )
     snap = ref.get()
     if not snap.exists:
         raise HTTPException(404, "Payment session not found")
@@ -2321,13 +2660,19 @@ async def consult_get_payment_session(
         raise HTTPException(403, "Payment session does not belong to this account")
 
     status = (session_data.get("status") or "").strip().lower()
-    if status in {"created", "awaiting_payment"} and _is_payment_session_expired(session_data):
-        ref.set({"status": "expired", "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+    if status in {"created", "awaiting_payment"} and _is_payment_session_expired(
+        session_data
+    ):
+        ref.set(
+            {"status": "expired", "updated_at": firestore.SERVER_TIMESTAMP}, merge=True
+        )
         snap = ref.get()
 
     session = _serialize_payment_session(snap)
     session["qr_src"] = f"/api/payments/upi-qr/instant-consult?tr={session_id}"
-    session["upi_intent"] = _upi_intent_for_amount(Decimal(INSTANT_CONSULT_FEE_INR), payment_ref=session_id)
+    session["upi_intent"] = _upi_intent_for_amount(
+        Decimal(INSTANT_CONSULT_FEE_INR), payment_ref=session_id
+    )
 
     return {
         "ok": True,
@@ -2339,25 +2684,40 @@ async def consult_get_payment_session(
 @app.post("/api/payments/webhooks/instant-consult")
 async def consult_payment_webhook(
     body: InstantConsultPaymentWebhookRequest,
-    x_qhs_payment_secret: str | None = Header(default=None, alias="X-QHS-Payment-Secret"),
+    x_qhs_payment_secret: str | None = Header(
+        default=None, alias="X-QHS-Payment-Secret"
+    ),
 ) -> dict[str, Any]:
     configured_secret = _instant_payment_webhook_secret()
     if not configured_secret:
         raise HTTPException(503, "Automatic payment webhook is not configured")
 
     incoming_secret = (x_qhs_payment_secret or "").strip()
-    if not incoming_secret or not hmac.compare_digest(incoming_secret, configured_secret):
+    if not incoming_secret or not hmac.compare_digest(
+        incoming_secret, configured_secret
+    ):
         raise HTTPException(401, "Invalid webhook secret")
 
     provider_status = (body.status or "").strip().lower()
     if provider_status in {"paid", "success", "captured", "txn_success", "completed"}:
         next_status = "paid"
-    elif provider_status in {"failed", "cancelled", "canceled", "expired", "timeout", "txn_failure"}:
+    elif provider_status in {
+        "failed",
+        "cancelled",
+        "canceled",
+        "expired",
+        "timeout",
+        "txn_failure",
+    }:
         next_status = "failed"
     else:
         raise HTTPException(400, "Unsupported webhook payment status")
 
-    ref = get_firestore().collection("instant_consult_payment_sessions").document(body.session_id)
+    ref = (
+        get_firestore()
+        .collection("instant_consult_payment_sessions")
+        .document(body.session_id)
+    )
     snap = ref.get()
     if not snap.exists:
         raise HTTPException(404, "Payment session not found")
@@ -2365,7 +2725,11 @@ async def consult_payment_webhook(
     existing = snap.to_dict() or {}
     current_status = (existing.get("status") or "").strip().lower()
     if current_status == "consumed":
-        return {"ok": True, "data": _serialize_payment_session(snap), "idempotent": True}
+        return {
+            "ok": True,
+            "data": _serialize_payment_session(snap),
+            "idempotent": True,
+        }
 
     amount_expected = int(existing.get("amount") or INSTANT_CONSULT_FEE_INR)
     if int(body.amount) != amount_expected:
@@ -2379,7 +2743,9 @@ async def consult_payment_webhook(
         "failure_reason": (body.failure_reason or "").strip() or None,
     }
     if body.payment_reference:
-        patch["payment_reference"] = _normalize_payment_reference(body.payment_reference)
+        patch["payment_reference"] = _normalize_payment_reference(
+            body.payment_reference
+        )
     if next_status == "paid":
         patch["paid_at"] = firestore.SERVER_TIMESTAMP
         patch["failure_reason"] = None
@@ -2402,7 +2768,9 @@ async def consult_claim_payment(
 ) -> dict[str, Any]:
     _ = body
     _ = identity
-    raise HTTPException(410, "Manual payment references are disabled. Start a secure payment session.")
+    raise HTTPException(
+        410, "Manual payment references are disabled. Start a secure payment session."
+    )
 
 
 @app.post("/api/consult/messages")
@@ -2414,14 +2782,21 @@ async def consult_create_message(
     type_id = _normalize_consult_type_id(body.type_id)
 
     if body.payment_amount != INSTANT_CONSULT_FEE_INR:
-        raise HTTPException(400, f"Instant Consult requires INR {INSTANT_CONSULT_FEE_INR} per message")
+        raise HTTPException(
+            400, f"Instant Consult requires INR {INSTANT_CONSULT_FEE_INR} per message"
+        )
 
     claim_id = (body.payment_claim_id or "").strip()
     session_id = (body.payment_session_id or "").strip()
     if claim_id:
-        raise HTTPException(410, "Manual payment references are disabled. Start a secure payment session.")
+        raise HTTPException(
+            410,
+            "Manual payment references are disabled. Start a secure payment session.",
+        )
     if not session_id:
-        raise HTTPException(402, "Start a secure payment session before sending your message")
+        raise HTTPException(
+            402, "Start a secure payment session before sending your message"
+        )
 
     normalized_payment_reference = (
         _normalize_payment_reference(body.payment_reference)
@@ -2474,7 +2849,10 @@ async def consult_create_message(
     session_status = (session_data.get("status") or "").strip().lower()
     if str(session_data.get("uid") or "") != uid:
         raise HTTPException(403, "Payment session does not belong to this account")
-    if _is_payment_session_expired(session_data) and session_status in {"created", "awaiting_payment"}:
+    if _is_payment_session_expired(session_data) and session_status in {
+        "created",
+        "awaiting_payment",
+    }:
         raise HTTPException(402, "Payment session expired. Start a fresh payment.")
     if session_status == "consumed":
         raise HTTPException(409, "This payment has already been used")
@@ -2485,7 +2863,11 @@ async def consult_create_message(
         raise HTTPException(400, "Payment session amount mismatch")
 
     session_reference = str(session_data.get("payment_reference") or "").strip()
-    if normalized_payment_reference and session_reference and session_reference != normalized_payment_reference:
+    if (
+        normalized_payment_reference
+        and session_reference
+        and session_reference != normalized_payment_reference
+    ):
         raise HTTPException(400, "Payment reference mismatch")
     if session_reference:
         payment_reference_value = session_reference
@@ -2549,7 +2931,9 @@ async def consult_create_message(
 
 
 @app.get("/api/combined-healings/my-request")
-async def combined_healings_my_request(identity: dict[str, Any] = Depends(require_client)) -> dict[str, Any]:
+async def combined_healings_my_request(
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
     uid = str(identity.get("uid") or "").strip()
     if not uid:
         raise HTTPException(400, "Invalid client profile")
@@ -2571,10 +2955,16 @@ async def combined_healings_upsert_request(
     if not body.wishes:
         raise HTTPException(400, "Add at least one wish")
     if len(body.wishes) > COMBINED_HEALING_MAX_WISHES:
-        raise HTTPException(400, f"Maximum {COMBINED_HEALING_MAX_WISHES} wishes allowed")
+        raise HTTPException(
+            400, f"Maximum {COMBINED_HEALING_MAX_WISHES} wishes allowed"
+        )
 
     req_ref, req_snap, existing_wishes, existing_row = _combined_load_request_state(uid)
-    existing_checkout_status = str((existing_row or {}).get("checkout_status") or "not_started").strip().lower()
+    existing_checkout_status = (
+        str((existing_row or {}).get("checkout_status") or "not_started")
+        .strip()
+        .lower()
+    )
     if existing_checkout_status == "paid":
         raise HTTPException(409, "Checkout is already completed for this request")
 
@@ -2585,13 +2975,23 @@ async def combined_healings_upsert_request(
         body.country_profile,
         fallback=(existing_row or {}).get("country_profile") or "india",
     )
-    country_code = (body.country_code or (existing_row or {}).get("country_code") or "").strip().upper()
+    country_code = (
+        (body.country_code or (existing_row or {}).get("country_code") or "")
+        .strip()
+        .upper()
+    )
     if country_code:
         country_profile = _profile_from_country_code(country_code)
 
-    next_event_id = (body.ritual_event_id or (existing_row or {}).get("ritual_event_id") or "").strip()
-    next_event_date = (body.ritual_event_date or (existing_row or {}).get("ritual_event_date") or "").strip()
-    next_event_label = (body.ritual_event_label or (existing_row or {}).get("ritual_event_label") or "").strip()
+    next_event_id = (
+        body.ritual_event_id or (existing_row or {}).get("ritual_event_id") or ""
+    ).strip()
+    next_event_date = (
+        body.ritual_event_date or (existing_row or {}).get("ritual_event_date") or ""
+    ).strip()
+    next_event_label = (
+        body.ritual_event_label or (existing_row or {}).get("ritual_event_label") or ""
+    ).strip()
     next_event_lunar_label = (
         body.ritual_hindu_lunar_label
         or (existing_row or {}).get("ritual_hindu_lunar_label")
@@ -2617,7 +3017,10 @@ async def combined_healings_upsert_request(
         if not text:
             raise HTTPException(400, f"Wish #{idx + 1} cannot be empty")
         if len(text) > COMBINED_HEALING_MAX_WISH_LENGTH:
-            raise HTTPException(400, f"Wish #{idx + 1} exceeds {COMBINED_HEALING_MAX_WISH_LENGTH} characters")
+            raise HTTPException(
+                400,
+                f"Wish #{idx + 1} exceeds {COMBINED_HEALING_MAX_WISH_LENGTH} characters",
+            )
 
         raw_id = str(wish.id or "").strip()
         if raw_id and not re.fullmatch(r"[A-Za-z0-9_-]{6,96}", raw_id):
@@ -2633,7 +3036,11 @@ async def combined_healings_upsert_request(
         existing_text = str((existing or {}).get("text") or "").strip()
         existing_note = str((existing or {}).get("admin_note") or "").strip()
 
-        if existing and text == existing_text and existing_status in COMBINED_WISH_STATUS_VALUES:
+        if (
+            existing
+            and text == existing_text
+            and existing_status in COMBINED_WISH_STATUS_VALUES
+        ):
             status = existing_status
             admin_note = existing_note
         else:
@@ -2667,11 +3074,19 @@ async def combined_healings_upsert_request(
         if existing_id and existing_id not in keep_ids:
             _combined_wishes_collection(uid).document(existing_id).delete()
 
-    checkout_status = existing_checkout_status if existing_checkout_status in {"not_started", "awaiting_payment", "paid"} else "not_started"
-    next_status = _combined_request_status_from_wishes(next_wishes, checkout_status=checkout_status)
+    checkout_status = (
+        existing_checkout_status
+        if existing_checkout_status in {"not_started", "awaiting_payment", "paid"}
+        else "not_started"
+    )
+    next_status = _combined_request_status_from_wishes(
+        next_wishes, checkout_status=checkout_status
+    )
     if next_status != "approved_all" and checkout_status == "awaiting_payment":
         checkout_status = "not_started"
-        next_status = _combined_request_status_from_wishes(next_wishes, checkout_status=checkout_status)
+        next_status = _combined_request_status_from_wishes(
+            next_wishes, checkout_status=checkout_status
+        )
 
     req_payload: dict[str, Any] = {
         "uid": uid,
@@ -2717,9 +3132,15 @@ async def combined_healings_submit_review(
         raise HTTPException(400, "Add at least one wish before review")
 
     ritual_event_id = (body.ritual_event_id or row.get("ritual_event_id") or "").strip()
-    ritual_event_date = (body.ritual_event_date or row.get("ritual_event_date") or "").strip()
-    ritual_event_label = (body.ritual_event_label or row.get("ritual_event_label") or "").strip()
-    ritual_hindu_lunar_label = (body.ritual_hindu_lunar_label or row.get("ritual_hindu_lunar_label") or "").strip()
+    ritual_event_date = (
+        body.ritual_event_date or row.get("ritual_event_date") or ""
+    ).strip()
+    ritual_event_label = (
+        body.ritual_event_label or row.get("ritual_event_label") or ""
+    ).strip()
+    ritual_hindu_lunar_label = (
+        body.ritual_hindu_lunar_label or row.get("ritual_hindu_lunar_label") or ""
+    ).strip()
 
     if not ritual_event_id or ritual_event_id not in COMBINED_EVENT_LABELS:
         raise HTTPException(400, "Select a valid ritual event before review")
@@ -2731,8 +3152,13 @@ async def combined_healings_submit_review(
     except ValueError as exc:
         raise HTTPException(400, "Invalid ritual date") from exc
 
-    if all(str(item.get("status") or "").strip().lower() == "approved" for item in wishes):
-        raise HTTPException(409, "All wishes are already approved. No further review cycles are allowed.")
+    if all(
+        str(item.get("status") or "").strip().lower() == "approved" for item in wishes
+    ):
+        raise HTTPException(
+            409,
+            "All wishes are already approved. No further review cycles are allowed.",
+        )
 
     for wish in wishes:
         wish_id = str(wish.get("id") or "").strip()
@@ -2755,10 +3181,14 @@ async def combined_healings_submit_review(
             "review_count": next_review_count,
             "status": "in_review",
             "checkout_status": "not_started",
+            "client_review_pending": True,
             "ritual_event_id": ritual_event_id,
             "ritual_event_date": ritual_event_date,
-            "ritual_event_label": ritual_event_label or COMBINED_EVENT_LABELS.get(ritual_event_id),
-            "ritual_hindu_lunar_label": ritual_hindu_lunar_label or row.get("ritual_hindu_lunar_label") or None,
+            "ritual_event_label": ritual_event_label
+            or COMBINED_EVENT_LABELS.get(ritual_event_id),
+            "ritual_hindu_lunar_label": ritual_hindu_lunar_label
+            or row.get("ritual_hindu_lunar_label")
+            or None,
             "last_review_submitted_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
         },
@@ -2776,7 +3206,9 @@ async def combined_healings_submit_review(
 
 
 @app.post("/api/combined-healings/my-request/cancel")
-async def combined_healings_cancel(identity: dict[str, Any] = Depends(require_client)) -> dict[str, Any]:
+async def combined_healings_cancel(
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
     uid = str(identity.get("uid") or "").strip()
     if not uid:
         raise HTTPException(400, "Invalid client profile")
@@ -2785,7 +3217,9 @@ async def combined_healings_cancel(identity: dict[str, Any] = Depends(require_cl
     if not req_snap:
         return {"ok": True, "deleted": False}
     if str((row or {}).get("checkout_status") or "").strip().lower() == "paid":
-        raise HTTPException(409, "Checkout is completed. Cancellation is not available.")
+        raise HTTPException(
+            409, "Checkout is completed. Cancellation is not available."
+        )
 
     _combined_hard_delete_request(uid)
     return {"ok": True, "deleted": True}
@@ -2807,22 +3241,32 @@ async def combined_healings_create_checkout_session(
         raise HTTPException(400, "Add at least one wish before checkout")
     if not row.get("ritual_event_id") or not row.get("ritual_event_date"):
         raise HTTPException(400, "Select ritual date before checkout")
-    if not all(str(item.get("status") or "").strip().lower() == "approved" for item in wishes):
-        raise HTTPException(409, "Checkout unlocks only after every wish is approved")
 
-    request_profile = _normalize_country_profile(row.get("country_profile"), fallback="india")
-    checkout_profile = _normalize_country_profile(body.country_profile, fallback=request_profile)
-    checkout_country_code = (body.country_code or row.get("country_code") or "").strip().upper()
-    if checkout_country_code:
-        checkout_profile = _profile_from_country_code(checkout_country_code)
+    selected_ids = [
+        str(item).strip()
+        for item in (body.selected_wish_ids or [])
+        if str(item).strip()
+    ]
+    approved_wish_ids = [
+        str(item.get("id") or "").strip()
+        for item in wishes
+        if str(item.get("status") or "").strip().lower() == "approved"
+    ]
+    checkout_wishes = (
+        [
+            item
+            for item in wishes
+            if str(item.get("id") or "").strip() in selected_ids
+            and str(item.get("status") or "").strip().lower() == "approved"
+        ]
+        if selected_ids
+        else wishes
+    )
+    checkout_wish_count = len(checkout_wishes)
+    if checkout_wish_count == 0:
+        raise HTTPException(400, "No approved wishes selected for checkout")
 
-    if checkout_profile == "outside_india" and not _combined_international_payments_enabled():
-        raise HTTPException(409, _combined_international_payment_message("Combined Healings"))
-
-    if str(row.get("checkout_status") or "").strip().lower() == "paid":
-        raise HTTPException(409, "Checkout already completed")
-
-    wish_count = len(wishes)
+    wish_count = checkout_wish_count
     amount = _combined_total_amount(checkout_profile, wish_count)
     currency = _combined_currency(checkout_profile)
     if amount <= 0:
@@ -2836,12 +3280,16 @@ async def combined_healings_create_checkout_session(
         "uid": uid,
         "request_uid": uid,
         "email": row.get("email") or str(identity.get("email") or "").strip().lower(),
-        "display_name": row.get("display_name") or _resolve_client_display_name(identity, str(identity.get("email") or "").strip().lower()),
+        "display_name": row.get("display_name")
+        or _resolve_client_display_name(
+            identity, str(identity.get("email") or "").strip().lower()
+        ),
         "provider": _combined_payment_provider(),
         "status": "awaiting_payment",
         "amount": amount,
         "currency": currency,
         "wish_count": wish_count,
+        "selected_wish_ids": selected_ids if selected_ids else [],
         "country_profile": checkout_profile,
         "country_code": checkout_country_code or None,
         "created_at": firestore.SERVER_TIMESTAMP,
@@ -2849,15 +3297,23 @@ async def combined_healings_create_checkout_session(
         "expires_at": expires_at,
     }
 
-    session_ref = get_firestore().collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION).document(session_id)
+    session_ref = (
+        get_firestore()
+        .collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION)
+        .document(session_id)
+    )
     session_ref.set(session_payload, merge=True)
     session_snap = session_ref.get()
     session = _serialize_combined_payment_session(session_snap)
 
     response_data = dict(session)
     if checkout_profile == "india":
-        response_data["qr_src"] = f"/api/payments/upi-qr/combined-healings?amount={amount}&tr={session_id}"
-        response_data["upi_intent"] = _upi_intent_for_amount(Decimal(amount), payment_ref=session_id)
+        response_data["qr_src"] = (
+            f"/api/payments/upi-qr/combined-healings?amount={amount}&tr={session_id}"
+        )
+        response_data["upi_intent"] = _upi_intent_for_amount(
+            Decimal(amount), payment_ref=session_id
+        )
 
     req_ref.set(
         {
@@ -2865,6 +3321,8 @@ async def combined_healings_create_checkout_session(
             "country_code": checkout_country_code or None,
             "checkout_status": "awaiting_payment",
             "checkout_session_id": session_id,
+            "checkout_wish_count": wish_count,
+            "checkout_selected_wish_ids": selected_ids if selected_ids else [],
             "status": "checkout_pending",
             "updated_at": firestore.SERVER_TIMESTAMP,
         },
@@ -2895,7 +3353,11 @@ async def combined_healings_get_checkout_session(
     identity: dict[str, Any] = Depends(require_client),
 ) -> dict[str, Any]:
     uid = str(identity.get("uid") or "").strip()
-    session_ref = get_firestore().collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION).document(session_id)
+    session_ref = (
+        get_firestore()
+        .collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION)
+        .document(session_id)
+    )
     session_snap = session_ref.get()
     if not session_snap.exists:
         raise HTTPException(404, "Checkout session not found")
@@ -2905,16 +3367,24 @@ async def combined_healings_get_checkout_session(
         raise HTTPException(403, "Checkout session does not belong to this account")
 
     status = str(session_data.get("status") or "").strip().lower()
-    if status in {"created", "awaiting_payment"} and _is_payment_session_expired(session_data):
-        session_ref.set({"status": "expired", "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+    if status in {"created", "awaiting_payment"} and _is_payment_session_expired(
+        session_data
+    ):
+        session_ref.set(
+            {"status": "expired", "updated_at": firestore.SERVER_TIMESTAMP}, merge=True
+        )
         session_snap = session_ref.get()
         session_data = session_snap.to_dict() or {}
 
     row = _serialize_combined_payment_session(session_snap)
     if row.get("country_profile") == "india":
         amount = int(row.get("amount") or 0)
-        row["qr_src"] = f"/api/payments/upi-qr/combined-healings?amount={amount}&tr={session_id}"
-        row["upi_intent"] = _upi_intent_for_amount(Decimal(amount), payment_ref=session_id)
+        row["qr_src"] = (
+            f"/api/payments/upi-qr/combined-healings?amount={amount}&tr={session_id}"
+        )
+        row["upi_intent"] = _upi_intent_for_amount(
+            Decimal(amount), payment_ref=session_id
+        )
 
     return {
         "ok": True,
@@ -2926,25 +3396,40 @@ async def combined_healings_get_checkout_session(
 @app.post("/api/payments/webhooks/combined-healings")
 async def combined_healings_payment_webhook(
     body: CombinedHealingPaymentWebhookRequest,
-    x_qhs_payment_secret: str | None = Header(default=None, alias="X-QHS-Payment-Secret"),
+    x_qhs_payment_secret: str | None = Header(
+        default=None, alias="X-QHS-Payment-Secret"
+    ),
 ) -> dict[str, Any]:
     configured_secret = _combined_payment_webhook_secret()
     if not configured_secret:
         raise HTTPException(503, "Combined-healings payment webhook is not configured")
 
     incoming_secret = (x_qhs_payment_secret or "").strip()
-    if not incoming_secret or not hmac.compare_digest(incoming_secret, configured_secret):
+    if not incoming_secret or not hmac.compare_digest(
+        incoming_secret, configured_secret
+    ):
         raise HTTPException(401, "Invalid webhook secret")
 
     provider_status = str(body.status or "").strip().lower()
     if provider_status in {"paid", "success", "captured", "txn_success", "completed"}:
         next_status = "paid"
-    elif provider_status in {"failed", "cancelled", "canceled", "expired", "timeout", "txn_failure"}:
+    elif provider_status in {
+        "failed",
+        "cancelled",
+        "canceled",
+        "expired",
+        "timeout",
+        "txn_failure",
+    }:
         next_status = "failed"
     else:
         raise HTTPException(400, "Unsupported webhook payment status")
 
-    session_ref = get_firestore().collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION).document(body.session_id)
+    session_ref = (
+        get_firestore()
+        .collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION)
+        .document(body.session_id)
+    )
     session_snap = session_ref.get()
     if not session_snap.exists:
         raise HTTPException(404, "Checkout session not found")
@@ -2952,7 +3437,11 @@ async def combined_healings_payment_webhook(
     existing = session_snap.to_dict() or {}
     current_status = str(existing.get("status") or "").strip().lower()
     if current_status == "paid" and next_status == "paid":
-        return {"ok": True, "data": _serialize_combined_payment_session(session_snap), "idempotent": True}
+        return {
+            "ok": True,
+            "data": _serialize_combined_payment_session(session_snap),
+            "idempotent": True,
+        }
 
     expected_amount = int(existing.get("amount") or 0)
     if int(body.amount) != expected_amount:
@@ -2999,7 +3488,9 @@ async def combined_healings_payment_webhook(
     return {"ok": True, "data": session_row}
 
 
-async def _upi_qr_response_for_amount(amount: Decimal, payment_ref: str | None = None) -> Response:
+async def _upi_qr_response_for_amount(
+    amount: Decimal, payment_ref: str | None = None
+) -> Response:
     rounded = amount.quantize(Decimal("0.01"))
     if rounded <= 0:
         raise HTTPException(400, "Amount must be greater than zero")
@@ -3009,7 +3500,11 @@ async def _upi_qr_response_for_amount(amount: Decimal, payment_ref: str | None =
     if safe_payment_ref is None and rounded in STATIC_QR_OVERRIDES:
         static_path = STATIC_QR_OVERRIDES[rounded]
         if static_path.exists():
-            media_type = "image/jpeg" if static_path.suffix.lower() in {".jpg", ".jpeg"} else "image/png"
+            media_type = (
+                "image/jpeg"
+                if static_path.suffix.lower() in {".jpg", ".jpeg"}
+                else "image/png"
+            )
             return Response(
                 content=static_path.read_bytes(),
                 media_type=media_type,
@@ -3041,7 +3536,9 @@ async def _upi_qr_response_for_amount(amount: Decimal, payment_ref: str | None =
 
 @app.get("/api/payments/upi-qr/instant-consult")
 async def upi_qr_instant_consult(tr: str | None = None) -> Response:
-    return await _upi_qr_response_for_amount(Decimal(INSTANT_CONSULT_FEE_INR), payment_ref=tr)
+    return await _upi_qr_response_for_amount(
+        Decimal(INSTANT_CONSULT_FEE_INR), payment_ref=tr
+    )
 
 
 @app.get("/api/payments/upi-qr/combined-healings")
@@ -3115,10 +3612,22 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
     consult_counts: dict[str, int] = {"new": 0, "inprogress": 0, "done": 0}
     try:
         for status in CONSULT_STATUS_VALUES:
-            agg = db.collection("instant_consult_messages").where("status", "==", status).count().get()
+            agg = (
+                db.collection("instant_consult_messages")
+                .where("status", "==", status)
+                .count()
+                .get()
+            )
             consult_counts[status] = int(agg[0][0].value) if agg else 0
-        pending_agg = db.collection("instant_consult_messages").where("status", "==", "pending").count().get()
-        consult_counts["inprogress"] += int(pending_agg[0][0].value) if pending_agg else 0
+        pending_agg = (
+            db.collection("instant_consult_messages")
+            .where("status", "==", "pending")
+            .count()
+            .get()
+        )
+        consult_counts["inprogress"] += (
+            int(pending_agg[0][0].value) if pending_agg else 0
+        )
     except Exception:
         docs = db.collection("instant_consult_messages").stream()
         for d in docs:
@@ -3136,14 +3645,20 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
         "checkout_pending": 0,
         "checkout_paid": 0,
     }
-    combined_checkout_counts: dict[str, int] = {"not_started": 0, "awaiting_payment": 0, "paid": 0}
+    combined_checkout_counts: dict[str, int] = {
+        "not_started": 0,
+        "awaiting_payment": 0,
+        "paid": 0,
+    }
     combined_total_review_count = 0
     try:
         docs = db.collection(COMBINED_HEALING_COLLECTION).stream()
         for d in docs:
             data = d.to_dict() or {}
             status = str(data.get("status") or "draft").strip().lower()
-            checkout_status = str(data.get("checkout_status") or "not_started").strip().lower()
+            checkout_status = (
+                str(data.get("checkout_status") or "not_started").strip().lower()
+            )
             if status in combined_counts:
                 combined_counts[status] += 1
             else:
@@ -3186,7 +3701,9 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
 
 
 @app.get("/api/admin/instagram")
-async def admin_get_instagram(limit: int = 24, force: bool = False, _=Depends(require_admin)) -> dict[str, Any]:
+async def admin_get_instagram(
+    limit: int = 24, force: bool = False, _=Depends(require_admin)
+) -> dict[str, Any]:
     items, fetched_at, cached = await _get_cached_instagram(limit, force=force)
     try:
         curation = _get_doc(*CURATION_DOC)
@@ -3214,7 +3731,9 @@ class CurationRequest(BaseModel):
 
 
 @app.put("/api/admin/instagram/curation")
-async def admin_set_curation(body: CurationRequest, _=Depends(require_admin)) -> dict[str, Any]:
+async def admin_set_curation(
+    body: CurationRequest, _=Depends(require_admin)
+) -> dict[str, Any]:
     coll, doc = CURATION_DOC
     payload = {
         "selected_ids": body.selected_ids,
@@ -3237,18 +3756,22 @@ async def admin_list_subscribers(_=Depends(require_admin)) -> dict[str, Any]:
     for d in docs:
         data = d.to_dict() or {}
         ts = _iso_value(data.get("subscribed_at"))
-        rows.append({
-            "id": d.id,
-            "email": data.get("email") or d.id,
-            "source": data.get("source") or "",
-            "subscribed_at": ts,
-        })
+        rows.append(
+            {
+                "id": d.id,
+                "email": data.get("email") or d.id,
+                "source": data.get("source") or "",
+                "subscribed_at": ts,
+            }
+        )
     rows.sort(key=lambda r: r.get("subscribed_at") or "", reverse=True)
     return {"data": rows, "count": len(rows)}
 
 
 @app.delete("/api/admin/newsletter/subscribers/{email}")
-async def admin_delete_subscriber(email: str, _=Depends(require_admin)) -> dict[str, Any]:
+async def admin_delete_subscriber(
+    email: str, _=Depends(require_admin)
+) -> dict[str, Any]:
     email_norm = email.lower().strip()
     get_firestore().collection("newsletter_subscribers").document(email_norm).delete()
     return {"ok": True, "email": email_norm}
@@ -3291,7 +3814,11 @@ async def admin_list_payment_claims(
         query = query.where("status", "==", status_filter)
 
     try:
-        docs = list(query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(safe_limit).stream())
+        docs = list(
+            query.order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(safe_limit)
+            .stream()
+        )
     except Exception:
         docs = list(query.limit(safe_limit).stream())
 
@@ -3308,9 +3835,13 @@ async def admin_update_payment_claim(
 ) -> dict[str, Any]:
     next_status = _normalize_payment_claim_status(body.status)
     if next_status == "consumed":
-        raise HTTPException(400, "Consumed status is managed automatically by message creation")
+        raise HTTPException(
+            400, "Consumed status is managed automatically by message creation"
+        )
 
-    ref = get_firestore().collection("instant_consult_payment_claims").document(claim_id)
+    ref = (
+        get_firestore().collection("instant_consult_payment_claims").document(claim_id)
+    )
     snap = ref.get()
     if not snap.exists:
         raise HTTPException(404, "Payment claim not found")
@@ -3348,7 +3879,11 @@ async def admin_list_consult_messages(
         query = query.where("status", "==", status_filter)
 
     try:
-        docs = list(query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(safe_limit).stream())
+        docs = list(
+            query.order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(safe_limit)
+            .stream()
+        )
     except Exception:
         docs = list(query.limit(safe_limit).stream())
 
@@ -3395,12 +3930,20 @@ async def admin_reply_consult_message(
     current_reply_raw = current.get("admin_reply")
     current_reply = current_reply_raw if isinstance(current_reply_raw, dict) else {}
     current_images_raw = current_reply.get("images")
-    current_images = [img for img in current_images_raw if isinstance(img, dict)] if isinstance(current_images_raw, list) else []
+    current_images = (
+        [img for img in current_images_raw if isinstance(img, dict)]
+        if isinstance(current_images_raw, list)
+        else []
+    )
 
     uploaded_images = await _upload_consult_reply_images(message_id, images or [])
-    final_images: list[dict[str, Any]] = uploaded_images if uploaded_images else current_images
+    final_images: list[dict[str, Any]] = (
+        uploaded_images if uploaded_images else current_images
+    )
     if len(final_images) > MAX_CONSULT_REPLY_IMAGES:
-        raise HTTPException(400, f"Maximum {MAX_CONSULT_REPLY_IMAGES} images are allowed")
+        raise HTTPException(
+            400, f"Maximum {MAX_CONSULT_REPLY_IMAGES} images are allowed"
+        )
 
     reply_payload = {
         "text": clean_reply,
@@ -3450,7 +3993,12 @@ async def admin_list_combined_healings_requests(
     safe_limit = max(1, min(limit, 500))
     rows: list[dict[str, Any]] = []
 
-    docs = list(get_firestore().collection(COMBINED_HEALING_COLLECTION).limit(safe_limit).stream())
+    docs = list(
+        get_firestore()
+        .collection(COMBINED_HEALING_COLLECTION)
+        .limit(safe_limit)
+        .stream()
+    )
     for doc in docs:
         uid = str(doc.id)
         wish_docs = list(_combined_wishes_collection(uid).stream())
@@ -3459,7 +4007,11 @@ async def admin_list_combined_healings_requests(
 
     status_filter = str(status or "").strip().lower()
     if status_filter:
-        rows = [row for row in rows if str(row.get("status") or "").strip().lower() == status_filter]
+        rows = [
+            row
+            for row in rows
+            if str(row.get("status") or "").strip().lower() == status_filter
+        ]
 
     checkout_filter = str(checkout_status or "").strip().lower()
     if checkout_filter:
@@ -3469,12 +4021,17 @@ async def admin_list_combined_healings_requests(
             if str(row.get("checkout_status") or "").strip().lower() == checkout_filter
         ]
 
-    country_filter = _normalize_country_profile(country_profile, fallback="") if country_profile else ""
+    country_filter = (
+        _normalize_country_profile(country_profile, fallback="")
+        if country_profile
+        else ""
+    )
     if country_filter:
         rows = [
             row
             for row in rows
-            if _normalize_country_profile(row.get("country_profile"), fallback="india") == country_filter
+            if _normalize_country_profile(row.get("country_profile"), fallback="india")
+            == country_filter
         ]
 
     q = str(query or "").strip().lower()
@@ -3505,9 +4062,16 @@ async def admin_list_combined_healings_requests(
     elif key == "wish_count":
         rows.sort(key=lambda item: int(item.get("wish_count") or 0), reverse=reverse)
     elif key == "checkout_status":
-        rows.sort(key=lambda item: str(item.get("checkout_status") or ""), reverse=reverse)
+        rows.sort(
+            key=lambda item: str(item.get("checkout_status") or ""), reverse=reverse
+        )
     else:
-        rows.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=reverse)
+        rows.sort(
+            key=lambda item: str(
+                item.get("updated_at") or item.get("created_at") or ""
+            ),
+            reverse=reverse,
+        )
 
     return {"data": rows, "count": len(rows)}
 
@@ -3520,7 +4084,9 @@ async def admin_review_combined_healings_request(
 ) -> dict[str, Any]:
     decision = str(body.decision or "").strip().lower()
     if decision not in {"approved", "needs_correction"}:
-        raise HTTPException(400, "Decision must be either 'approved' or 'needs_correction'")
+        raise HTTPException(
+            400, "Decision must be either 'approved' or 'needs_correction'"
+        )
 
     req_ref, req_snap, wishes, row = _combined_load_request_state(uid)
     if not req_snap or not row:
@@ -3531,7 +4097,15 @@ async def admin_review_combined_healings_request(
         raise HTTPException(400, "No wishes available to review")
 
     all_ids = [str(item.get("id") or "").strip() for item in wishes if item.get("id")]
-    selected = set(all_ids if body.select_all else [str(item).strip() for item in (body.selected_wish_ids or []) if str(item).strip()])
+    selected = set(
+        all_ids
+        if body.select_all
+        else [
+            str(item).strip()
+            for item in (body.selected_wish_ids or [])
+            if str(item).strip()
+        ]
+    )
     selected = {item for item in selected if item in all_ids}
     if body.invert_selection:
         selected = set(all_ids) - selected
@@ -3554,11 +4128,17 @@ async def admin_review_combined_healings_request(
     if not final_snap or not final_row:
         raise HTTPException(500, "Unable to update review state")
 
-    checkout_state = str(final_row.get("checkout_status") or "not_started").strip().lower()
-    next_status = _combined_request_status_from_wishes(final_wishes, checkout_status=checkout_state)
+    checkout_state = (
+        str(final_row.get("checkout_status") or "not_started").strip().lower()
+    )
+    next_status = _combined_request_status_from_wishes(
+        final_wishes, checkout_status=checkout_state
+    )
     if next_status != "approved_all" and checkout_state == "awaiting_payment":
         checkout_state = "not_started"
-        next_status = _combined_request_status_from_wishes(final_wishes, checkout_status=checkout_state)
+        next_status = _combined_request_status_from_wishes(
+            final_wishes, checkout_status=checkout_state
+        )
 
     req_ref.set(
         {
@@ -3567,6 +4147,7 @@ async def admin_review_combined_healings_request(
             "updated_at": firestore.SERVER_TIMESTAMP,
             "admin_last_action": decision,
             "admin_last_note": note_text if decision == "needs_correction" else "",
+            "client_review_pending": False,
         },
         merge=True,
     )
@@ -3591,7 +4172,9 @@ async def admin_submit_combined_healings_review(
     if not wishes:
         raise HTTPException(400, "No wishes available for review submission")
 
-    status = _combined_request_status_from_wishes(wishes, checkout_status=row.get("checkout_status") or "not_started")
+    status = _combined_request_status_from_wishes(
+        wishes, checkout_status=row.get("checkout_status") or "not_started"
+    )
     if status == "draft":
         status = "in_review"
 
@@ -3602,6 +4185,7 @@ async def admin_submit_combined_healings_review(
             "admin_review_published_at": firestore.SERVER_TIMESTAMP,
             "admin_last_note": admin_note,
             "updated_at": firestore.SERVER_TIMESTAMP,
+            "client_review_pending": False,
         },
         merge=True,
     )
@@ -3614,14 +4198,25 @@ async def admin_submit_combined_healings_review(
                 "You can now proceed to checkout whenever ready.\n\n"
                 "Warmly,\nQuantum Healing Space"
             )
-            _send_email([str(row.get("email"))], "[QHS] Combined Healings review approved", text_body)
+            _send_email(
+                [str(row.get("email"))],
+                "[QHS] Combined Healings review approved",
+                text_body,
+            )
         else:
             items: list[str] = []
             for idx, wish in enumerate(wishes, start=1):
                 if str(wish.get("status") or "") == "needs_correction":
-                    note = str(wish.get("admin_note") or "").strip() or "Please revise this wish."
+                    note = (
+                        str(wish.get("admin_note") or "").strip()
+                        or "Please revise this wish."
+                    )
                     items.append(f"{idx}. {wish.get('text') or ''}\n   Note: {note}")
-            item_block = "\n".join(items) if items else "Please review your latest wish statuses in the portal."
+            item_block = (
+                "\n".join(items)
+                if items
+                else "Please review your latest wish statuses in the portal."
+            )
             text_body = (
                 "Namaste from Quantum Healing Space,\n\n"
                 "Your Combined Healings review has been updated.\n"
@@ -3629,7 +4224,11 @@ async def admin_submit_combined_healings_review(
                 f"{item_block}\n\n"
                 "Warmly,\nQuantum Healing Space"
             )
-            _send_email([str(row.get("email"))], "[QHS] Combined Healings review update", text_body)
+            _send_email(
+                [str(row.get("email"))],
+                "[QHS] Combined Healings review update",
+                text_body,
+            )
 
     _req_ref, final_snap, _final_wishes, final_row = _combined_load_request_state(uid)
     if not final_snap or not final_row:
@@ -3654,8 +4253,12 @@ class ConfigRequest(BaseModel):
 
 
 @app.put("/api/admin/config")
-async def admin_put_config(body: ConfigRequest, _=Depends(require_admin)) -> dict[str, Any]:
-    payload: dict[str, Any] = {k: v for k, v in body.model_dump().items() if v is not None}
+async def admin_put_config(
+    body: ConfigRequest, _=Depends(require_admin)
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        k: v for k, v in body.model_dump().items() if v is not None
+    }
     payload["updated_at"] = firestore.SERVER_TIMESTAMP
     _set_doc(*CONFIG_DOC, payload)
     cfg = _get_doc(*CONFIG_DOC)
@@ -3676,5 +4279,6 @@ async def public_config() -> dict[str, Any]:
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.environ.get("BACKEND_PORT", 8000))
     uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=False)

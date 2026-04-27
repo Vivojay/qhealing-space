@@ -19,6 +19,55 @@ import { PRICING } from '@/constants/pricing';
 
 const OUTSIDE_NOTICE = 'International checkout is currently visible but disabled. Use India-side rails (Wise/Remitly/Western Union) and contact support for confirmation.';
 const MAX_WISH_LEN = 200;
+const EVENTS_CACHE_KEY = 'combined_healings_events_cache';
+const EVENTS_CACHE_VERSION = 'v1';
+
+function getEventsCache() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = localStorage.getItem(EVENTS_CACHE_KEY);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached);
+    if (!parsed.data || !parsed.fetchedAt || !parsed.nextRefreshDate) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function setEventsCache(data, nextRefreshDate) {
+  if (typeof window === 'undefined') return;
+  try {
+    const cache = {
+      version: EVENTS_CACHE_VERSION,
+      fetchedAt: new Date().toISOString(),
+      nextRefreshDate: nextRefreshDate,
+      data: data,
+    };
+    localStorage.setItem(EVENTS_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+}
+
+function shouldRefreshEvents(nextRefreshDate) {
+  if (!nextRefreshDate) return true;
+  const today = new Date().toISOString().slice(0, 10);
+  return today >= nextRefreshDate;
+}
+
+function computeNextRefreshDates(eventDates) {
+  if (!Array.isArray(eventDates) || eventDates.length === 0) return null;
+  const refreshDates = eventDates.map((date) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  });
+  return refreshDates.sort();
+}
+
+function getEarliestRefreshDate(refreshDates) {
+  if (!Array.isArray(refreshDates) || refreshDates.length === 0) return null;
+  return refreshDates.sort()[0];
+}
 const DEFAULT_OUTSIDE_RAILS = [
   { id: 'wise', name: 'Wise', detail: 'Best for direct bank transfer into India.' },
   { id: 'remitly', name: 'Remitly', detail: 'Fast INR settlement to India account rails.' },
@@ -132,11 +181,13 @@ export default function CombinedHealings() {
   const [requestRow, setRequestRow] = useState(null);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [wishes, setWishes] = useState([{ id: nextLocalWishId(), text: '', status: 'draft', admin_note: '' }]);
+  const [selectedWishIds, setSelectedWishIds] = useState([]);
 
   const [wishFilter, setWishFilter] = useState('all');
   const [saving, setSaving] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [clientReviewPending, setClientReviewPending] = useState(false);
 
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -145,6 +196,7 @@ export default function CombinedHealings() {
   const [checkoutRefreshing, setCheckoutRefreshing] = useState(false);
   const [checkoutSessionId, setCheckoutSessionId] = useState('');
   const [checkoutSessionStatus, setCheckoutSessionStatus] = useState('');
+  const [checkoutWishCount, setCheckoutWishCount] = useState(0);
   const [checkoutQrSrc, setCheckoutQrSrc] = useState('');
   const [checkoutUpiIntent, setCheckoutUpiIntent] = useState('');
   const [checkoutNotice, setCheckoutNotice] = useState('');
@@ -166,7 +218,11 @@ export default function CombinedHealings() {
   const wishUnitLabel = countryProfile === 'outside_india'
     ? PRICING.combinedHealings.international.label
     : PRICING.combinedHealings.india.label;
-  const checkoutTotal = wishUnitPrice * wishCount;
+  const selectedCount = useMemo(
+    () => selectedWishIds.filter((sid) => wishes.some((w) => w.id === sid)).length,
+    [selectedWishIds, wishes],
+  );
+  const checkoutTotal = wishUnitPrice * selectedCount;
   const checkoutTotalLabel = formatTotal(checkoutTotal, countryProfile);
 
   const allApproved = useMemo(
@@ -179,16 +235,26 @@ export default function CombinedHealings() {
     if (!selectedEvent) return false;
     if (!wishes.length) return false;
     if (allApproved) return false;
+    if (clientReviewPending) return false;
     return wishes.every((wish) => wish.text.trim().length > 0 && wish.text.trim().length <= MAX_WISH_LEN);
-  }, [authUser, emailVerificationPending, selectedEvent, wishes, allApproved]);
+  }, [authUser, emailVerificationPending, selectedEvent, wishes, allApproved, clientReviewPending]);
+
+  const selectedWishesApproved = useMemo(() => {
+    if (!selectedWishIds.length) return false;
+    return selectedWishIds.every((sid) => {
+      const w = wishes.find((item) => item.id === sid);
+      return w && String(w.status || '').toLowerCase() === 'approved';
+    });
+  }, [selectedWishIds, wishes]);
 
   const canCheckout = useMemo(() => {
     if (!authUser || emailVerificationPending) return false;
     if (!selectedEvent) return false;
-    if (!allApproved) return false;
+    if (!selectedWishesApproved) return false;
     if (countryProfile === 'outside_india') return false;
+    if (!selectedCount) return false;
     return true;
-  }, [authUser, emailVerificationPending, selectedEvent, allApproved, countryProfile]);
+  }, [authUser, emailVerificationPending, selectedEvent, selectedWishesApproved, countryProfile, selectedCount]);
 
   const displayedWishes = useMemo(() => {
     if (wishFilter === 'all') return wishes;
@@ -209,26 +275,81 @@ export default function CombinedHealings() {
     navigate(`/auth?mode=${normalized}&next=${encodeURIComponent(nextPath)}`);
   }, [navigate]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setEventsLoading(true);
-    setEventsError('');
-    fetch(apiUrl('/api/combined-healings/events?limit=10'))
+  const EVENTS_CACHE_KEY = 'combined_healings_events_cache';
+
+  const getCachedEvents = () => {
+    try {
+      const cached = localStorage.getItem(EVENTS_CACHE_KEY);
+      if (!cached) return null;
+      const parsed = JSON.parse(cached);
+      if (!parsed?.data || !Array.isArray(parsed.data)) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+
+  const getRefreshDatesFromEvents = (rows) => {
+    const dates = rows
+      .map((e) => e?.date)
+      .filter(Boolean)
+      .sort();
+    return dates.map((d) => {
+      try {
+        const dateObj = new Date(d);
+        dateObj.setDate(dateObj.getDate() + 1);
+        return dateObj.toISOString().split('T')[0];
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+  };
+
+  const shouldRefreshEvents = (cached) => {
+    if (!cached?.nextRefreshDates?.length) return true;
+    const today = new Date().toISOString().split('T')[0];
+    return cached.nextRefreshDates.some((d) => today >= d);
+  };
+
+  const fetchEvents = (useCache = true) => {
+    const cached = getCachedEvents();
+    if (useCache && cached && !shouldRefreshEvents(cached)) {
+      setEvents(cached.data);
+      setSelectedEventId((prev) => prev || cached.data[0]?.id || '');
+      setEventsLoading(false);
+      return Promise.resolve();
+    }
+    return fetch(apiUrl('/api/combined-healings/events?limit=5'))
       .then(async (res) => {
         if (!res.ok) throw new Error(await parseApiError(res));
         return res.json();
       })
       .then((payload) => {
-        if (cancelled) return;
         const rows = Array.isArray(payload?.data) ? payload.data : [];
+        const refreshDates = getRefreshDatesFromEvents(rows);
+        const cacheData = { data: rows, nextRefreshDates: refreshDates, cachedAt: new Date().toISOString() };
+        try {
+          localStorage.setItem(EVENTS_CACHE_KEY, JSON.stringify(cacheData));
+        } catch {}
         setEvents(rows);
         setSelectedEventId((prev) => prev || rows[0]?.id || '');
       })
       .catch((err) => {
-        if (cancelled) return;
-        setEvents([]);
-        setEventsError(err.message || 'Unable to load ritual events right now.');
-      })
+        if (cached?.data) {
+          setEvents(cached.data);
+          setSelectedEventId((prev) => prev || cached.data[0]?.id || '');
+        } else {
+          setEvents([]);
+          setEventsError(err.message || 'Unable to load ritual events right now.');
+        }
+      });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setEventsLoading(true);
+    setEventsError('');
+    fetchEvents(true)
       .finally(() => {
         if (!cancelled) setEventsLoading(false);
       });
@@ -258,6 +379,18 @@ export default function CombinedHealings() {
         if (!cancelled) setGeoLoading(false);
       });
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) return;
+      const cached = getCachedEvents();
+      if (cached && shouldRefreshEvents(cached)) {
+        fetchEvents(false).then(() => setEventsLoading(false));
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
   useEffect(() => {
@@ -291,6 +424,7 @@ export default function CombinedHealings() {
       const payload = await res.json();
       const row = payload?.data || null;
       setRequestRow(row);
+      setClientReviewPending(Boolean(row?.client_review_pending));
       if (row?.country_profile) {
         setCountryProfile(row.country_profile === 'outside_india' ? 'outside_india' : 'india');
       }
@@ -301,6 +435,9 @@ export default function CombinedHealings() {
         setSelectedEventId(row.ritual_event_id);
       }
       const serverWishes = Array.isArray(row?.wishes) ? row.wishes : [];
+      const serverWishIds = serverWishes.map((wish) => String(wish.id)).filter(Boolean);
+      const currentWishIds = wishes.map((w) => w.id).filter(Boolean);
+      const wishIdsChanged = JSON.stringify(serverWishIds.sort()) !== JSON.stringify(currentWishIds.sort());
       if (serverWishes.length) {
         setWishes(serverWishes.map((wish) => ({
           id: String(wish.id),
@@ -308,11 +445,22 @@ export default function CombinedHealings() {
           status: String(wish.status || 'draft'),
           admin_note: String(wish.admin_note || ''),
         })));
+        if (wishIdsChanged) {
+          setSelectedWishIds((prev) => {
+            const validPrev = prev.filter((id) => serverWishIds.includes(id));
+            return validPrev.length > 0 ? validPrev : serverWishIds;
+          });
+        }
       } else {
         setWishes([{ id: nextLocalWishId(), text: '', status: 'draft', admin_note: '' }]);
+        setSelectedWishIds([]);
       }
       if (row?.checkout_session_id) {
         setCheckoutSessionId(String(row.checkout_session_id));
+        setCheckoutWishCount(parseInt(String(row.checkout_wish_count || '0'), 10) || 0);
+      } else {
+        setCheckoutSessionId('');
+        setCheckoutWishCount(0);
       }
       if (row?.checkout_status === 'paid') {
         setCheckoutSessionStatus('paid');
@@ -330,169 +478,14 @@ export default function CombinedHealings() {
     loadMyRequest(idToken);
   }, [idToken, emailVerificationPending, loadMyRequest]);
 
-  const onSignOut = async () => {
-    if (!firebaseAuth) return;
-    await signOut(firebaseAuth).catch(() => {});
-    setAuthUser(null);
-    setIdToken('');
-    setRequestRow(null);
-    setWishes([{ id: nextLocalWishId(), text: '', status: 'draft', admin_note: '' }]);
-    resetCheckoutState();
-  };
-
-  const setWishText = (wishId, nextText) => {
-    const value = String(nextText || '').slice(0, MAX_WISH_LEN);
-    setWishes((prev) => prev.map((wish) => (
-      wish.id === wishId
-        ? {
-          ...wish,
-          text: value,
-          status: wish.status === 'needs_correction' ? 'corrected' : wish.status,
-        }
-        : wish
-    )));
-  };
-
-  const addWish = () => {
-    setWishes((prev) => [...prev, { id: nextLocalWishId(), text: '', status: 'draft', admin_note: '' }]);
-  };
-
-  const removeWish = (wishId) => {
-    setWishes((prev) => {
-      if (prev.length <= 1) return prev;
-      return prev.filter((wish) => wish.id !== wishId);
-    });
-  };
-
-  const persistRequest = useCallback(async ({ silent = false } = {}) => {
-    if (!idToken) throw new Error('Please sign in first.');
-    const hasEmpty = wishes.some((wish) => !wish.text.trim());
-    if (hasEmpty) throw new Error('Every wish must contain text before saving.');
-    if (!selectedEvent) throw new Error('Select one ritual date from the events list first.');
-
-    if (!silent) {
-      setSaving(true);
-      setError('');
-      setNotice('');
-    }
-
-    const payload = {
-      ritual_event_id: selectedEvent.id,
-      ritual_event_date: selectedEvent.date,
-      ritual_event_label: selectedEvent.label,
-      ritual_hindu_lunar_label: selectedEvent?.hindu_lunar?.label || '',
-      country_profile: countryProfile,
-      country_code: countryCode,
-      wishes: wishes.map((wish) => ({
-        id: String(wish.id || '').startsWith('local_') ? undefined : wish.id,
-        text: wish.text.trim(),
-      })),
-    };
-
-    const res = await fetch(apiUrl('/api/combined-healings/my-request'), {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error(await parseApiError(res));
-    const body = await res.json();
-    const row = body?.data || null;
-    setRequestRow(row);
-    const rows = Array.isArray(row?.wishes) ? row.wishes : [];
-    if (rows.length) {
-      setWishes(rows.map((wish) => ({
-        id: String(wish.id),
-        text: String(wish.text || ''),
-        status: String(wish.status || 'draft'),
-        admin_note: String(wish.admin_note || ''),
-      })));
-    }
-    if (!silent) setNotice('Draft saved.');
-    return row;
-  }, [idToken, selectedEvent, countryProfile, countryCode, wishes]);
-
-  const saveNow = async () => {
-    try {
-      await persistRequest({ silent: false });
-    } catch (err) {
-      setError(err.message || 'Unable to save right now.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const submitReview = async () => {
-    if (!canSubmitReview) return;
-    setReviewing(true);
-    setError('');
-    setNotice('');
-    try {
-      const row = await persistRequest({ silent: true });
-      const ritual = selectedEvent || {
-        id: row?.ritual_event_id,
-        date: row?.ritual_event_date,
-        label: row?.ritual_event_label,
-        hindu_lunar: { label: row?.ritual_hindu_lunar_label || '' },
-      };
-      const res = await fetch(apiUrl('/api/combined-healings/my-request/review'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          ritual_event_id: ritual?.id,
-          ritual_event_date: ritual?.date,
-          ritual_event_label: ritual?.label,
-          ritual_hindu_lunar_label: ritual?.hindu_lunar?.label || '',
-        }),
-      });
-      if (!res.ok) throw new Error(await parseApiError(res));
-      const payload = await res.json();
-      const next = payload?.data || null;
-      setRequestRow(next);
-      const rows = Array.isArray(next?.wishes) ? next.wishes : [];
-      setWishes(rows.map((wish) => ({
-        id: String(wish.id),
-        text: String(wish.text || ''),
-        status: String(wish.status || 'draft'),
-        admin_note: String(wish.admin_note || ''),
-      })));
-      setNotice(payload?.client_notice || 'Review sent to admin.');
-      resetCheckoutState();
-    } catch (err) {
-      setError(err.message || 'Unable to submit review right now.');
-    } finally {
-      setReviewing(false);
-    }
-  };
-
-  const cancelRequest = async () => {
-    if (!idToken || cancelling) return;
-    const confirmed = window.confirm('This will permanently delete your current Combined Healings request. Continue?');
-    if (!confirmed) return;
-    setCancelling(true);
-    setError('');
-    setNotice('');
-    try {
-      const res = await fetch(apiUrl('/api/combined-healings/my-request/cancel'), {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (!res.ok) throw new Error(await parseApiError(res));
-      setRequestRow(null);
-      setWishes([{ id: nextLocalWishId(), text: '', status: 'draft', admin_note: '' }]);
-      resetCheckoutState();
-      setNotice('Your combined-healings request was cancelled and deleted.');
-    } catch (err) {
-      setError(err.message || 'Unable to cancel request right now.');
-    } finally {
-      setCancelling(false);
-    }
-  };
+  useEffect(() => {
+    if (!idToken || !requestRow) return undefined;
+    if (document.hidden) return undefined;
+    const timer = setInterval(() => {
+      loadMyRequest(idToken);
+    }, 8000);
+    return () => clearInterval(timer);
+}, [idToken, requestRow, loadMyRequest]);
 
   const refreshCheckoutSession = useCallback(async (sessionId, { quiet = false } = {}) => {
     if (!idToken || !sessionId) return;
@@ -520,14 +513,27 @@ export default function CombinedHealings() {
   }, [idToken, loadMyRequest]);
 
   useEffect(() => {
-    if (!checkoutSessionId || !idToken) return undefined;
-    if (checkoutSessionStatus === 'paid') return undefined;
+    if (!checkoutSessionId || !idToken || checkoutSessionStatus === 'paid') return;
+    if (document.hidden) return undefined;
     const timer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
       refreshCheckoutSession(checkoutSessionId, { quiet: true });
     }, 5000);
     return () => clearInterval(timer);
   }, [checkoutSessionId, checkoutSessionStatus, idToken, refreshCheckoutSession]);
+
+  useEffect(() => {
+    if (!checkoutSessionId || checkoutSessionStatus === 'paid') return;
+    if (!selectedCount || !idToken) return;
+    if (document.hidden) return;
+    const currentSessionWishCount = checkoutWishCount || parseInt(String(requestRow?.checkout_wish_count || '0'), 10);
+    if (currentSessionWishCount === selectedCount) return;
+    const timer = setTimeout(async () => {
+      try {
+        resetCheckoutState();
+      } catch {}
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [selectedCount, checkoutSessionId, checkoutSessionStatus, idToken, requestRow, checkoutWishCount]);
 
   const startCheckout = async () => {
     if (!idToken || checkoutStarting) return;
@@ -537,6 +543,9 @@ export default function CombinedHealings() {
     setNotice('');
     setCheckoutNotice('');
     try {
+      if (checkoutSessionId) {
+        resetCheckoutState();
+      }
       await persistRequest({ silent: true });
       const res = await fetch(apiUrl('/api/combined-healings/my-request/checkout/session'), {
         method: 'POST',
@@ -544,7 +553,11 @@ export default function CombinedHealings() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ country_profile: countryProfile, country_code: countryCode }),
+        body: JSON.stringify({ 
+          country_profile: countryProfile, 
+          country_code: countryCode,
+          selected_wish_ids: selectedWishIds,
+        }),
       });
       if (!res.ok) throw new Error(await parseApiError(res));
       const payload = await res.json();
@@ -600,7 +613,7 @@ export default function CombinedHealings() {
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
                 <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Events</p>
-                <h3 className="text-xl mt-2" style={{ color: 'var(--fg)' }}>Next 10 ritual dates</h3>
+                <h3 className="text-xl mt-2" style={{ color: 'var(--fg)' }}>Next 5 ritual dates</h3>
                 <p className="mt-2 text-xs" style={{ color: 'var(--fg2)' }}>Includes Hindu lunar date for each event.</p>
               </div>
               <div className="inline-flex items-center gap-2 rounded-full px-3 py-1.5" style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}>
@@ -729,14 +742,45 @@ export default function CombinedHealings() {
                     </div>
 
                     <div className="space-y-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={selectAllWishes}
+                          className="px-3 py-1.5 rounded-full text-[10px] tracking-[0.16em] uppercase"
+                          style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={clearWishSelection}
+                          className="px-3 py-1.5 rounded-full text-[10px] tracking-[0.16em] uppercase"
+                          style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
+                        >
+                          Clear
+                        </button>
+                        <span className="text-[10px] tracking-[0.14em] uppercase" style={{ color: 'var(--fg3)' }}>
+                          {selectedCount} selected
+                        </span>
+                      </div>
+
                       {displayedWishes.map((wish, index) => {
                         const token = statusToken(wish.status);
                         const absoluteIndex = wishes.findIndex((item) => item.id === wish.id);
                         const displayIndex = absoluteIndex >= 0 ? absoluteIndex + 1 : index + 1;
+                        const isSelected = selectedWishIds.includes(wish.id);
                         return (
-                          <div key={wish.id} className="rounded-xl p-3" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
+                          <div key={wish.id} className="rounded-xl p-3" style={{ border: `1px solid ${isSelected ? 'var(--special-border)' : 'var(--border2)'}`, background: isSelected ? 'var(--special-bg)' : 'var(--bg)' }}>
                             <div className="flex items-center justify-between gap-3">
-                              <p className="text-[11px] tracking-[0.17em] uppercase" style={{ color: 'var(--fg3)' }}>Wish {displayIndex}</p>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleWish(wish.id)}
+                                  className="mt-0.5"
+                                />
+                                <p className="text-[11px] tracking-[0.17em] uppercase" style={{ color: 'var(--fg3)' }}>Wish {displayIndex}</p>
+                              </label>
                               <span className="text-[10px] tracking-[0.14em] uppercase px-2 py-1 rounded-full" style={token.style}>{token.label}</span>
                             </div>
                             <textarea
@@ -752,16 +796,6 @@ export default function CombinedHealings() {
                               {wish.admin_note ? (
                                 <p className="text-xs" style={{ color: '#E8A58D' }}>Admin note: {wish.admin_note}</p>
                               ) : <span />}
-                              <button
-                                type="button"
-                                onClick={() => removeWish(wish.id)}
-                                disabled={wishes.length <= 1}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] tracking-[0.16em] uppercase disabled:opacity-45"
-                                style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
-                              >
-                                <Trash2 className="w-3 h-3" strokeWidth={1.8} />
-                                Delete
-                              </button>
                             </div>
                           </div>
                         );
@@ -811,7 +845,7 @@ export default function CombinedHealings() {
 
                     <div className="mt-4 rounded-lg p-3" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
                       <p className="text-[10px] tracking-[0.18em] uppercase" style={{ color: 'var(--fg3)' }}>Amount summary</p>
-                      <p className="text-sm mt-2" style={{ color: 'var(--fg2)' }}>{wishCount} wish x {wishUnitLabel}</p>
+                      <p className="text-sm mt-2" style={{ color: 'var(--fg2)' }}>{selectedCount} selected wish{selectedCount !== 1 ? 'es' : ''} x {wishUnitLabel}</p>
                       <p className="text-xl mt-1" style={{ color: 'var(--fg)' }}>{checkoutTotalLabel}</p>
                     </div>
 
@@ -844,8 +878,8 @@ export default function CombinedHealings() {
                         disabled={!canCheckout || checkoutStarting}
                         className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-[11px] tracking-[0.2em] uppercase disabled:opacity-55"
                         style={{
-                          border: `1px solid ${allApproved ? 'var(--status-done-border)' : 'var(--border2)'}`,
-                          color: allApproved ? 'var(--status-success-fg)' : 'var(--fg3)',
+                          border: `1px solid ${selectedWishesApproved ? 'var(--status-done-border)' : 'var(--border2)'}`,
+                          color: selectedWishesApproved ? 'var(--status-success-fg)' : 'var(--fg3)',
                         }}
                       >
                         {checkoutStarting ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2} /> : <WalletCards className="w-3.5 h-3.5" strokeWidth={1.8} />}

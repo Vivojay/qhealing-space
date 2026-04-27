@@ -101,6 +101,15 @@ export default function AdminCombinedHealings() {
     load({ keepSelection: false });
   }, [load]);
 
+  useEffect(() => {
+    if (loading) return undefined;
+    if (document.hidden) return undefined;
+    const timer = setInterval(() => {
+      load({ keepSelection: true });
+    }, 12000);
+    return () => clearInterval(timer);
+  }, [loading, load]);
+
   const active = useMemo(
     () => rows.find((item) => item.uid === activeUid) || null,
     [rows, activeUid],
