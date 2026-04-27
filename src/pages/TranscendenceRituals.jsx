@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import Footer from '@/components/wellness/Footer';
+import { useTheme } from '@/context/ThemeContext';
 
 const SMOOTH = { duration: 0.65, ease: [0.16, 1, 0.3, 1] };
 
@@ -89,10 +90,14 @@ function Mandala({ size = 320, reverse = false, color = 'var(--accent)' }) {
 export default function TranscendenceRituals() {
   const heroRef = useRef(null);
   const [activePhase, setActivePhase] = useState(0);
+  const { isDark } = useTheme();
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
   const currentPhase = phases[activePhase];
   const phaseCheckoutUrl = `/retreats/spiritual-healing-retreat/book?source=transcendence&phase=${encodeURIComponent(currentPhase.phase)}&stage=${encodeURIComponent(currentPhase.title)}`;
+  const heroOverlayBackground = isDark
+    ? 'linear-gradient(to bottom, transparent, rgba(12,10,9,0.35), var(--bg))'
+    : 'linear-gradient(to bottom, transparent 0%, rgba(12,10,9,0.2) 74%, rgba(244,242,236,0.58) 90%, var(--bg) 100%)';
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh', color: 'var(--fg)' }}>
@@ -102,7 +107,7 @@ export default function TranscendenceRituals() {
         <motion.div style={{ y }} className="absolute inset-0 scale-110">
           <img src="https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1800&q=90" alt="Transcendence" className="w-full h-full object-cover opacity-60" />
         </motion.div>
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, transparent, rgba(12,10,9,0.35), var(--bg))' }} />
+        <div className="absolute inset-0" style={{ background: heroOverlayBackground }} />
 
         {/* Mandala in hero corner */}
         <div className="absolute -right-32 -top-20 pointer-events-none">

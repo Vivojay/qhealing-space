@@ -4,6 +4,10 @@ export const PRICING = {
     india:        { amount: 2500,  currency: '₹',   label: '₹2,500'  },
     international:{ amount: 50,    currency: 'USD', label: '$50' },
   },
+  combinedHealings: {
+    india: { amount: 5000, currency: '₹', label: '₹5,000' },
+    international: { amount: 80, currency: 'USD', label: '$80' },
+  },
   treatment: {
     india: {
       firstHour:        { amount: 5000, currency: '₹', label: '₹5,000' },

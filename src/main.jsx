@@ -9,6 +9,7 @@ import ScrollToTop from '@/components/ScrollToTop'
 import Home from '@/pages/Home'
 import Services from '@/pages/Services'
 import InstantConsult from '@/pages/InstantConsult'
+import CombinedHealings from '@/pages/CombinedHealings'
 import AuthPortal from '@/pages/AuthPortal'
 import Healings from '@/pages/Healings'
 import GlobalPractices from '@/pages/GlobalPractices'
@@ -48,6 +49,7 @@ function AppRoutes() {
           <Route path="/" element={<Home />} />
           <Route path="/services" element={<Services />} />
           <Route path="/instant-consult" element={<InstantConsult />} />
+          <Route path="/combined-healings" element={<CombinedHealings />} />
           <Route path="/auth" element={<AuthPortal />} />
           <Route path="/healings" element={<Healings />} />
           <Route path="/global-practices" element={<GlobalPractices />} />

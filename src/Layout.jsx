@@ -62,6 +62,7 @@ const navItems = [
   { label: 'Home', page: 'Home', number: '00' },
   { label: 'Services', page: 'Services', number: '01' },
   { label: 'Instant Consult', page: 'Instant Consult', number: 'IC', special: true },
+  { label: 'Combined Healings', page: 'Combined Healings', number: 'CH', special: true },
   { label: 'Healings', page: 'Healings', number: '02' },
   { label: 'Global Practices', page: 'Global Practices', number: '03' },
   { label: 'Retreats', page: 'Retreats', number: '04' },
@@ -244,7 +245,7 @@ export default function Layout({ children }) {
                 key={item.page}
                 to={href}
                 onClick={() => {
-                  if (item.page === 'Instant Consult') scrollToTopImmediate();
+                  if (item.page === 'Instant Consult' || item.page === 'Combined Healings') scrollToTopImmediate();
                   setExpanded(false);
                 }}
                 className={`group relative flex items-center gap-4 px-2 py-4 lg:py-4 rounded ${item.special ? 'hover-feedback' : 'hover-surface'}`}

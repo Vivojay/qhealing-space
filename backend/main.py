@@ -42,7 +42,7 @@ import smtplib
 import ssl
 import time
 from decimal import Decimal
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
@@ -64,6 +64,17 @@ try:
 except Exception:  # pragma: no cover - optional dependency fallback
     qrcode = None
 
+try:
+    from panchang.panchang import CalendarSystem as PanchangCalendarSystem
+    from panchang import Location as PanchangLocation
+    from panchang import calendar as panchang_calendar
+    from panchang import panchang as panchang_daily
+except Exception:  # pragma: no cover - optional dependency fallback
+    PanchangCalendarSystem = None
+    PanchangLocation = None
+    panchang_calendar = None
+    panchang_daily = None
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("qhs.backend")
 
@@ -78,6 +89,10 @@ for env_path in (PROJECT_ROOT / ".env", PROJECT_ROOT / "backend" / ".env"):
 ADMIN_ALERT_EMAIL = "vartikashukla2000@yahoo.com"
 INSTANT_CONSULT_FEE_INR = 1500
 BOOKING_CONSULT_FEE_INR = 2500
+COMBINED_HEALING_FEE_INR_PER_WISH = 5000
+COMBINED_HEALING_FEE_USD_PER_WISH = 80
+COMBINED_HEALING_MAX_WISHES = max(1, min(int(os.environ.get("COMBINED_HEALING_MAX_WISHES", "40")), 120))
+COMBINED_HEALING_MAX_WISH_LENGTH = 200
 MAX_CONSULT_REPLY_IMAGES = 10
 MAX_CONSULT_REPLY_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_CONSULT_REPLY_EMAIL_INLINE_IMAGES = 4
@@ -100,6 +115,30 @@ PAYMENT_SESSION_STATUS_VALUES: tuple[str, ...] = (
     "expired",
 )
 PAYMENT_SESSION_TTL_MINUTES = max(5, min(int(os.environ.get("INSTANT_PAYMENT_SESSION_TTL_MINUTES", "30")), 180))
+COMBINED_PAYMENT_SESSION_STATUS_VALUES: tuple[str, ...] = (
+    "created",
+    "awaiting_payment",
+    "paid",
+    "failed",
+    "expired",
+)
+COMBINED_PAYMENT_SESSION_TTL_MINUTES = max(5, min(int(os.environ.get("COMBINED_PAYMENT_SESSION_TTL_MINUTES", "45")), 240))
+COMBINED_COUNTRY_PROFILE_VALUES: tuple[str, ...] = ("india", "outside_india")
+COMBINED_WISH_STATUS_VALUES: tuple[str, ...] = (
+    "draft",
+    "in_review",
+    "needs_correction",
+    "corrected",
+    "approved",
+)
+COMBINED_REQUEST_STATUS_VALUES: tuple[str, ...] = (
+    "draft",
+    "in_review",
+    "needs_correction",
+    "approved_all",
+    "checkout_pending",
+    "checkout_paid",
+)
 
 CONSULT_TYPES: list[dict[str, Any]] = [
     {
@@ -231,9 +270,68 @@ LEGACY_CONSULT_TYPE_TO_MODERN: dict[str, str] = {
     "health-energy": "dowsing",
 }
 
+COMBINED_HEALING_COLLECTION = "combined_healing_requests"
+COMBINED_HEALING_WISHES_SUBCOLLECTION = "wishes"
+COMBINED_HEALING_PAYMENT_SESSION_COLLECTION = "combined_healing_payment_sessions"
+
+COMBINED_PANCHANG_EVENT_MAP: dict[str, str] = {
+    "diwali": "diwali",
+    "holi": "holi",
+    "ganesh_chaturthi": "ganesh_chaturthi",
+    "mahashivaratri": "maha_shivaratri",
+    "ram_navami": "ram_navami",
+    "chaitra_navaratri": "chaitra_navaratri",
+    "sharad_navaratri": "navaratri_start",
+}
+
+COMBINED_EVENT_LABELS: dict[str, str] = {
+    "diwali": "Diwali",
+    "holi": "Holi",
+    "ganesh_chaturthi": "Ganesh Chaturthi",
+    "mahashivaratri": "Mahashivaratri",
+    "ram_navami": "Ram Navami",
+    "chaitra_navaratri": "Chaitra Navaratri",
+    "sharad_navaratri": "Sharad / Shardiya Navaratri",
+    "gupta_navaratri_ashada": "Gupta Navaratri (Ashada)",
+    "gupta_navaratri_magha": "Gupta Navaratri (Magha)",
+    "christmas": "Christmas",
+    "easter": "Easter",
+}
+
+COMBINED_INTERNATIONAL_PAYMENT_RAILS: list[dict[str, Any]] = [
+    {
+        "id": "wise",
+        "name": "Wise",
+        "tagline": "Best rate · multi-currency",
+        "detail": "Send from your local account to the India-side recipient account.",
+        "href": "https://wise.com/send-money/send-money-to-india",
+    },
+    {
+        "id": "remitly",
+        "name": "Remitly",
+        "tagline": "Fast bank-to-bank",
+        "detail": "Quick INR settlement to the same India-side recipient account.",
+        "href": "https://www.remitly.com/us/en/india",
+    },
+    {
+        "id": "western-union",
+        "name": "Western Union",
+        "tagline": "Global cash & bank rails",
+        "detail": "International transfer options that can fund the same India-side account.",
+        "href": "https://www.westernunion.com/in/en/send-money-to-india.html",
+    },
+]
+
+PANCHANG_INDIA_LOCATION = (
+    PanchangLocation(lat=28.4595, lng=77.0266, tz="Asia/Kolkata")
+    if PanchangLocation is not None
+    else None
+)
+
 STATIC_QR_OVERRIDES: dict[Decimal, Path] = {
     Decimal(str(BOOKING_CONSULT_FEE_INR)): PROJECT_ROOT / "attached_assets" / "qr-codes" / "inr-2500-paytm.jpg",
     Decimal(str(INSTANT_CONSULT_FEE_INR)): PROJECT_ROOT / "attached_assets" / "qr-codes" / "inr-1500-paytm.jpg",
+    Decimal(str(COMBINED_HEALING_FEE_INR_PER_WISH)): PROJECT_ROOT / "attached_assets" / "qr-codes" / "inr-5000-paytm.jpg",
 }
 
 _dynamic_qr_cache: dict[str, bytes] = {}
@@ -609,6 +707,571 @@ def _is_payment_session_expired(session_data: dict[str, Any]) -> bool:
     if expiry.tzinfo is None:
         expiry = expiry.replace(tzinfo=timezone.utc)
     return expiry <= datetime.now(timezone.utc)
+
+
+def _combined_payment_provider() -> str:
+    return (os.environ.get("COMBINED_PAYMENT_PROVIDER") or "paytm").strip().lower() or "paytm"
+
+
+def _combined_payment_webhook_secret() -> str | None:
+    secret = (os.environ.get("COMBINED_PAYMENT_WEBHOOK_SECRET") or "").strip()
+    if secret:
+        return secret
+    return _instant_payment_webhook_secret()
+
+
+def _combined_payment_automation_enabled() -> bool:
+    return bool(_combined_payment_webhook_secret())
+
+
+def _combined_international_payments_enabled() -> bool:
+    raw = (os.environ.get("COMBINED_INTL_PAYMENTS_ENABLED") or "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _instant_international_payments_enabled() -> bool:
+    raw = (os.environ.get("INSTANT_INTL_PAYMENTS_ENABLED") or "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _normalize_country_profile(raw_profile: str | None, *, fallback: str = "india") -> str:
+    value = str(raw_profile or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if value in {"india", "in", "indian"}:
+        return "india"
+    if value in {"outside_india", "outside", "international", "non_india", "non_indian", "global", "intl"}:
+        return "outside_india"
+    return fallback if fallback in COMBINED_COUNTRY_PROFILE_VALUES else "india"
+
+
+def _profile_from_country_code(country_code: str | None) -> str:
+    code = str(country_code or "").strip().upper()
+    if not code:
+        return "india"
+    return "india" if code == "IN" else "outside_india"
+
+
+def _profile_from_country_name(country_name: str | None) -> str:
+    text = str(country_name or "").strip().lower()
+    if not text:
+        return "india"
+    return "india" if text in {"india", "in"} else "outside_india"
+
+
+def _resolve_client_display_name(identity: dict[str, Any], email: str) -> str:
+    return (
+        str(identity.get("name") or "").strip()
+        or str(identity.get("display_name") or "").strip()
+        or (email.split("@", 1)[0] if email else "Client")
+    )
+
+
+def _combined_unit_amount(country_profile: str) -> int:
+    return COMBINED_HEALING_FEE_INR_PER_WISH if country_profile == "india" else COMBINED_HEALING_FEE_USD_PER_WISH
+
+
+def _combined_currency(country_profile: str) -> str:
+    return "INR" if country_profile == "india" else "USD"
+
+
+def _combined_total_amount(country_profile: str, wish_count: int) -> int:
+    safe_count = max(0, wish_count)
+    return _combined_unit_amount(country_profile) * safe_count
+
+
+def _normalize_combined_wish_status(raw_status: str | None) -> str:
+    status = str(raw_status or "").strip().lower()
+    if status not in COMBINED_WISH_STATUS_VALUES:
+        raise HTTPException(400, "Invalid wish status")
+    return status
+
+
+def _normalize_combined_request_status(raw_status: str | None) -> str:
+    status = str(raw_status or "").strip().lower()
+    if status not in COMBINED_REQUEST_STATUS_VALUES:
+        raise HTTPException(400, "Invalid combined-healing request status")
+    return status
+
+
+def _normalize_combined_payment_session_status(raw_status: str | None) -> str:
+    status = str(raw_status or "").strip().lower()
+    if status not in COMBINED_PAYMENT_SESSION_STATUS_VALUES:
+        raise HTTPException(400, "Invalid combined-healing payment session status")
+    return status
+
+
+def _combined_request_ref(uid: str):
+    return get_firestore().collection(COMBINED_HEALING_COLLECTION).document(uid)
+
+
+def _combined_wishes_collection(uid: str):
+    return _combined_request_ref(uid).collection(COMBINED_HEALING_WISHES_SUBCOLLECTION)
+
+
+def _serialize_combined_wish(doc: Any) -> dict[str, Any]:
+    data = doc.to_dict() or {}
+    return {
+        "id": doc.id,
+        "text": (data.get("text") or "").strip(),
+        "status": data.get("status") or "draft",
+        "admin_note": (data.get("admin_note") or "").strip(),
+        "position": int(data.get("position") or 0),
+        "updated_at": _iso_value(data.get("updated_at")),
+        "created_at": _iso_value(data.get("created_at")),
+    }
+
+
+def _serialize_combined_request(doc: Any, wishes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    data = doc.to_dict() or {}
+    wish_rows = list(wishes or [])
+    wish_rows.sort(key=lambda item: (int(item.get("position") or 0), item.get("created_at") or ""))
+    approved_count = sum(1 for item in wish_rows if item.get("status") == "approved")
+    needs_correction_count = sum(1 for item in wish_rows if item.get("status") == "needs_correction")
+    corrected_count = sum(1 for item in wish_rows if item.get("status") == "corrected")
+
+    return {
+        "id": doc.id,
+        "uid": data.get("uid") or doc.id,
+        "email": data.get("email") or "",
+        "display_name": data.get("display_name") or "",
+        "country_profile": _normalize_country_profile(data.get("country_profile"), fallback="india"),
+        "country_code": (data.get("country_code") or "").strip().upper(),
+        "ritual_event_id": data.get("ritual_event_id") or None,
+        "ritual_event_label": data.get("ritual_event_label") or None,
+        "ritual_event_date": data.get("ritual_event_date") or None,
+        "ritual_hindu_lunar_label": data.get("ritual_hindu_lunar_label") or None,
+        "review_count": int(data.get("review_count") or 0),
+        "status": data.get("status") or "draft",
+        "checkout_status": data.get("checkout_status") or "not_started",
+        "checkout_session_id": data.get("checkout_session_id") or None,
+        "checkout_paid_at": _iso_value(data.get("checkout_paid_at")),
+        "wish_count": len(wish_rows),
+        "approved_count": approved_count,
+        "needs_correction_count": needs_correction_count,
+        "corrected_count": corrected_count,
+        "wishes": wish_rows,
+        "created_at": _iso_value(data.get("created_at")),
+        "updated_at": _iso_value(data.get("updated_at")),
+    }
+
+
+def _serialize_combined_payment_session(doc: Any) -> dict[str, Any]:
+    data = doc.to_dict() or {}
+    amount_value = data.get("amount")
+    try:
+        amount_int = int(amount_value)
+    except Exception:
+        amount_int = 0
+    wish_count_value = data.get("wish_count")
+    try:
+        wish_count = int(wish_count_value)
+    except Exception:
+        wish_count = 0
+
+    return {
+        "id": doc.id,
+        "uid": data.get("uid"),
+        "email": data.get("email"),
+        "display_name": data.get("display_name"),
+        "request_uid": data.get("request_uid"),
+        "provider": data.get("provider") or _combined_payment_provider(),
+        "status": data.get("status") or "created",
+        "amount": amount_int,
+        "currency": data.get("currency") or "INR",
+        "wish_count": wish_count,
+        "country_profile": _normalize_country_profile(data.get("country_profile"), fallback="india"),
+        "country_code": (data.get("country_code") or "").strip().upper(),
+        "payment_reference": data.get("payment_reference") or None,
+        "provider_payment_id": data.get("provider_payment_id") or None,
+        "provider_event_id": data.get("provider_event_id") or None,
+        "failure_reason": data.get("failure_reason") or None,
+        "created_at": _iso_value(data.get("created_at")),
+        "updated_at": _iso_value(data.get("updated_at")),
+        "expires_at": _iso_value(data.get("expires_at")),
+        "paid_at": _iso_value(data.get("paid_at")),
+    }
+
+
+def _combined_checkout_confirmation_email(request_row: dict[str, Any]) -> dict[str, str]:
+    wishes = request_row.get("wishes") if isinstance(request_row.get("wishes"), list) else []
+    approved_wishes = [item for item in wishes if item.get("status") == "approved"]
+    ritual_label = request_row.get("ritual_event_label") or request_row.get("ritual_event_id") or "Selected ritual date"
+    ritual_date = request_row.get("ritual_event_date") or "TBD"
+    lunar_label = request_row.get("ritual_hindu_lunar_label") or ""
+    currency = _combined_currency(request_row.get("country_profile") or "india")
+    amount = _combined_total_amount(
+        _normalize_country_profile(request_row.get("country_profile"), fallback="india"),
+        len(approved_wishes),
+    )
+
+    wish_lines = "\n".join(
+        [f"{idx + 1}. {str(item.get('text') or '').strip()}" for idx, item in enumerate(approved_wishes)]
+    ) or "No approved wishes recorded."
+
+    subject = "[QHS] Combined Healings checkout confirmed"
+    text = (
+        "Namaste from Quantum Healing Space,\n\n"
+        "Your Combined Healings checkout is confirmed.\n\n"
+        f"Ritual date: {ritual_label} on {ritual_date}\n"
+        f"Hindu lunar date: {lunar_label or 'N/A'}\n"
+        f"Approved wishes: {len(approved_wishes)}\n"
+        f"Total paid: {currency} {amount}\n"
+        f"Review rounds completed: {request_row.get('review_count') or 0}\n\n"
+        "Final approved wishes:\n"
+        f"{wish_lines}\n\n"
+        "We are honored to hold this intention space for you.\n"
+        "Warmly,\n"
+        "Quantum Healing Space"
+    )
+
+    html_rows = "".join(
+        [
+            f"<li style=\"margin-bottom:8px;\">{html.escape(str(item.get('text') or '').strip())}</li>"
+            for item in approved_wishes
+        ]
+    ) or "<li>No approved wishes recorded.</li>"
+
+    html_body = f"""
+<html>
+  <body style=\"margin:0;padding:0;background:#f2f4f9;font-family:Arial,sans-serif;\">
+    <table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding:26px 0;\">
+      <tr>
+        <td align=\"center\">
+          <table role=\"presentation\" width=\"640\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:640px;background:#ffffff;border:1px solid #dde4ef;border-radius:14px;overflow:hidden;\">
+            <tr>
+              <td style=\"padding:22px 28px;background:#1f2a3f;color:#f7f9ff;\">
+                <p style=\"margin:0;font-size:12px;letter-spacing:0.16em;text-transform:uppercase;opacity:0.86;\">Quantum Healing Space</p>
+                <h1 style=\"margin:8px 0 0 0;font-size:24px;font-weight:600;\">Combined Healings Confirmed</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style=\"padding:24px 28px;\">
+                <p style=\"margin:0 0 12px 0;font-size:15px;line-height:24px;color:#1f2a3f;\">Your checkout has been confirmed and your approved wishes are now locked for ritual execution.</p>
+                <p style=\"margin:0 0 8px 0;font-size:13px;color:#4b5a72;\"><strong>Ritual date:</strong> {html.escape(str(ritual_label))} on {html.escape(str(ritual_date))}</p>
+                <p style=\"margin:0 0 8px 0;font-size:13px;color:#4b5a72;\"><strong>Hindu lunar date:</strong> {html.escape(str(lunar_label or 'N/A'))}</p>
+                <p style=\"margin:0 0 8px 0;font-size:13px;color:#4b5a72;\"><strong>Total paid:</strong> {html.escape(str(currency))} {html.escape(str(amount))}</p>
+                <p style=\"margin:0 0 12px 0;font-size:13px;color:#4b5a72;\"><strong>Review rounds:</strong> {int(request_row.get('review_count') or 0)}</p>
+                <div style=\"margin-top:12px;padding:14px;border:1px solid #dfe8f6;border-radius:10px;background:#f7fbff;\">
+                  <p style=\"margin:0 0 8px 0;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#3d5e8e;\">Final approved wishes</p>
+                  <ol style=\"margin:0;padding-left:18px;color:#1f2a3f;font-size:14px;line-height:22px;\">{html_rows}</ol>
+                </div>
+                <p style=\"margin:14px 0 0 0;font-size:13px;line-height:21px;color:#5a677f;\">Thank you for your trust. We are honored to support your healing journey.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+"""
+
+    return {"subject": subject, "text": text, "html": html_body}
+
+
+def _send_combined_checkout_emails(request_row: dict[str, Any]) -> bool:
+    client_email = str(request_row.get("email") or "").strip().lower()
+    if not client_email:
+        return False
+
+    payload = _combined_checkout_confirmation_email(request_row)
+    client_sent = _send_email([client_email], payload["subject"], payload["text"], html_body=payload["html"])
+
+    admin_subject = "[QHS][Combined Healings][PAID] Checkout confirmed"
+    admin_body = (
+        "Combined Healings checkout confirmed\n\n"
+        f"Client: {request_row.get('display_name') or request_row.get('email') or 'Client'}\n"
+        f"Email: {request_row.get('email') or 'N/A'}\n"
+        f"Country profile: {request_row.get('country_profile') or 'india'}\n"
+        f"Review count: {request_row.get('review_count') or 0}\n"
+        f"Ritual date: {request_row.get('ritual_event_label') or request_row.get('ritual_event_id') or 'N/A'} on {request_row.get('ritual_event_date') or 'N/A'}\n"
+        f"Checkout session: {request_row.get('checkout_session_id') or 'N/A'}\n"
+        f"Checkout status: {request_row.get('checkout_status') or 'not_started'}\n"
+        f"Wish count: {request_row.get('wish_count') or 0}\n"
+        f"Approved count: {request_row.get('approved_count') or 0}\n"
+    )
+    _send_email([ADMIN_ALERT_EMAIL], admin_subject, admin_body)
+    return client_sent
+
+
+def _combined_hard_delete_request(uid: str) -> None:
+    request_ref = _combined_request_ref(uid)
+    wishes_docs = list(_combined_wishes_collection(uid).stream())
+    for wish_doc in wishes_docs:
+        wish_doc.reference.delete()
+    request_ref.delete()
+
+    sessions_query = get_firestore().collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION).where("uid", "==", uid)
+    for doc in sessions_query.stream():
+        doc.reference.delete()
+
+
+def _combined_request_status_from_wishes(
+    wishes: list[dict[str, Any]],
+    *,
+    checkout_status: str = "not_started",
+) -> str:
+    status_value = str(checkout_status or "").strip().lower()
+    if status_value == "paid":
+        return "checkout_paid"
+    if status_value in {"awaiting_payment", "pending"}:
+        return "checkout_pending"
+
+    if not wishes:
+        return "draft"
+
+    statuses = [str(item.get("status") or "draft").strip().lower() for item in wishes]
+    if statuses and all(item == "approved" for item in statuses):
+        return "approved_all"
+    if any(item == "in_review" for item in statuses):
+        return "in_review"
+    if any(item in {"needs_correction", "corrected"} for item in statuses):
+        return "needs_correction"
+    return "draft"
+
+
+def _combined_load_request_state(uid: str) -> tuple[Any, Any | None, list[dict[str, Any]], dict[str, Any] | None]:
+    req_ref = _combined_request_ref(uid)
+    req_snap = req_ref.get()
+    if not req_snap.exists:
+        return req_ref, None, [], None
+
+    wish_docs = list(_combined_wishes_collection(uid).stream())
+    wishes = [_serialize_combined_wish(doc) for doc in wish_docs]
+    wishes.sort(key=lambda item: (int(item.get("position") or 0), item.get("created_at") or ""))
+    row = _serialize_combined_request(req_snap, wishes)
+    return req_ref, req_snap, wishes, row
+
+
+def _require_panchang_engine() -> None:
+    if panchang_calendar is None or panchang_daily is None or PANCHANG_INDIA_LOCATION is None:
+        raise HTTPException(503, "Holiday engine is unavailable. Install panchang to enable Combined Healings events.")
+
+
+def _hindu_lunar_payload(target_date: date, *, cache: dict[date, Any] | None = None) -> dict[str, Any]:
+    _require_panchang_engine()
+    local_cache = cache if isinstance(cache, dict) else {}
+    entry = local_cache.get(target_date)
+    if entry is None:
+        entry = panchang_daily.compute(target_date, PANCHANG_INDIA_LOCATION, calendar_system=PanchangCalendarSystem.AMANT)
+        local_cache[target_date] = entry
+
+    masa = getattr(entry, "masa", None)
+    tithi = getattr(entry, "tithi", None)
+    masa_name = str(getattr(masa, "name", "") or "").strip()
+    tithi_name = str(getattr(tithi, "name", "") or "").strip()
+    paksha_raw = getattr(tithi, "paksha", "")
+    paksha = str(getattr(paksha_raw, "value", paksha_raw) or "").strip()
+    label = " ".join(part for part in [masa_name, paksha, tithi_name] if part)
+    return {
+        "masa": masa_name,
+        "paksha": paksha,
+        "tithi": tithi_name,
+        "label": label,
+    }
+
+
+def _western_easter(year: int) -> date:
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return date(year, month, day)
+
+
+def _find_lunar_month_shukla_pratipada(
+    year: int,
+    lunar_month_number: int,
+    *,
+    cache: dict[date, Any] | None = None,
+) -> date | None:
+    _require_panchang_engine()
+    local_cache = cache if isinstance(cache, dict) else {}
+    cursor = date(year, 1, 1)
+    while cursor.year == year:
+        payload = local_cache.get(cursor)
+        if payload is None:
+            payload = panchang_daily.compute(cursor, PANCHANG_INDIA_LOCATION, calendar_system=PanchangCalendarSystem.AMANT)
+            local_cache[cursor] = payload
+
+        masa = getattr(payload, "masa", None)
+        tithi = getattr(payload, "tithi", None)
+        masa_no = int(getattr(masa, "number", 0) or 0)
+        tithi_no = int(getattr(tithi, "number", 0) or 0)
+        paksha_raw = getattr(tithi, "paksha", "")
+        paksha = str(getattr(paksha_raw, "value", paksha_raw) or "").strip().lower()
+        if masa_no == lunar_month_number and tithi_no == 1 and paksha == "shukla":
+            return cursor
+        cursor += timedelta(days=1)
+    return None
+
+
+def _build_combined_events(limit: int) -> list[dict[str, Any]]:
+    _require_panchang_engine()
+    safe_limit = max(1, min(limit, 25))
+    today = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30))).date()
+
+    event_rows: list[dict[str, Any]] = []
+    panchang_cache: dict[date, Any] = {}
+
+    year = today.year
+    while year <= today.year + 6:
+        festival_rows = panchang_calendar.compute_festivals(
+            year,
+            PANCHANG_INDIA_LOCATION,
+            calendar_system=PanchangCalendarSystem.PURNIMANT,
+        )
+        by_festival_id = {str(item.id): item for item in festival_rows}
+
+        for key, festival_id in COMBINED_PANCHANG_EVENT_MAP.items():
+            item = by_festival_id.get(festival_id)
+            if not item:
+                continue
+            event_date = item.date if isinstance(item.date, date) else date(year, 1, 1)
+            lunar = _hindu_lunar_payload(event_date, cache=panchang_cache)
+            event_rows.append(
+                {
+                    "id": key,
+                    "label": COMBINED_EVENT_LABELS.get(key) or key,
+                    "date": event_date,
+                    "hindu_lunar": lunar,
+                    "source": "panchang",
+                }
+            )
+
+        ashada_start = _find_lunar_month_shukla_pratipada(year, 4, cache=panchang_cache)
+        if ashada_start:
+            event_rows.append(
+                {
+                    "id": "gupta_navaratri_ashada",
+                    "label": COMBINED_EVENT_LABELS["gupta_navaratri_ashada"],
+                    "date": ashada_start,
+                    "hindu_lunar": _hindu_lunar_payload(ashada_start, cache=panchang_cache),
+                    "source": "panchang",
+                }
+            )
+
+        magha_start = _find_lunar_month_shukla_pratipada(year, 11, cache=panchang_cache)
+        if magha_start:
+            event_rows.append(
+                {
+                    "id": "gupta_navaratri_magha",
+                    "label": COMBINED_EVENT_LABELS["gupta_navaratri_magha"],
+                    "date": magha_start,
+                    "hindu_lunar": _hindu_lunar_payload(magha_start, cache=panchang_cache),
+                    "source": "panchang",
+                }
+            )
+
+        christmas = date(year, 12, 25)
+        event_rows.append(
+            {
+                "id": "christmas",
+                "label": COMBINED_EVENT_LABELS["christmas"],
+                "date": christmas,
+                "hindu_lunar": _hindu_lunar_payload(christmas, cache=panchang_cache),
+                "source": "formula",
+            }
+        )
+
+        easter = _western_easter(year)
+        event_rows.append(
+            {
+                "id": "easter",
+                "label": COMBINED_EVENT_LABELS["easter"],
+                "date": easter,
+                "hindu_lunar": _hindu_lunar_payload(easter, cache=panchang_cache),
+                "source": "formula",
+            }
+        )
+
+        upcoming_count = sum(1 for row in event_rows if row.get("date") and row["date"] >= today)
+        if upcoming_count >= safe_limit + 8:
+            break
+        year += 1
+
+    dedupe: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in event_rows:
+        event_date = row.get("date")
+        if not isinstance(event_date, date):
+            continue
+        key = (str(row.get("id") or ""), event_date.isoformat())
+        if key not in dedupe:
+            dedupe[key] = row
+
+    upcoming = [row for row in dedupe.values() if isinstance(row.get("date"), date) and row["date"] >= today]
+    upcoming.sort(key=lambda item: (item["date"], item.get("label") or ""))
+
+    output: list[dict[str, Any]] = []
+    for row in upcoming[:safe_limit]:
+        dt = row["date"]
+        lunar = row.get("hindu_lunar") if isinstance(row.get("hindu_lunar"), dict) else {}
+        output.append(
+            {
+                "id": row.get("id"),
+                "label": row.get("label"),
+                "date": dt.isoformat(),
+                "hindu_lunar": {
+                    "masa": lunar.get("masa") or "",
+                    "paksha": lunar.get("paksha") or "",
+                    "tithi": lunar.get("tithi") or "",
+                    "label": lunar.get("label") or "",
+                },
+                "source": row.get("source") or "panchang",
+            }
+        )
+    return output
+
+
+def _combined_international_payment_message(service_name: str) -> str:
+    rails = ", ".join(str(item.get("name") or "").strip() for item in COMBINED_INTERNATIONAL_PAYMENT_RAILS)
+    return (
+        f"{service_name} international checkout is currently disabled. "
+        f"Use India-side transfer rails ({rails}) and contact support for manual confirmation."
+    )
+
+
+def _resolve_geo_hint_from_request(request: Request) -> dict[str, Any]:
+    header_sources = [
+        "cf-ipcountry",
+        "x-vercel-ip-country",
+        "x-country-code",
+        "cloudfront-viewer-country",
+        "x-appengine-country",
+    ]
+
+    detected_code = ""
+    detected_source = "fallback"
+    for header_name in header_sources:
+        value = str(request.headers.get(header_name) or "").strip().upper()
+        if value and value not in {"XX", "ZZ", "T1"} and re.fullmatch(r"[A-Z]{2}", value):
+            detected_code = value
+            detected_source = header_name
+            break
+
+    if not detected_code:
+        return {
+            "country_code": "IN",
+            "country_profile": "india",
+            "source": detected_source,
+            "auto_detected": False,
+        }
+
+    return {
+        "country_code": detected_code,
+        "country_profile": _profile_from_country_code(detected_code),
+        "source": detected_source,
+        "auto_detected": True,
+    }
 
 
 def _safe_storage_name(name: str) -> str:
@@ -1065,9 +1728,10 @@ async def _maybe_send_instagram_token_warning(*, reason: str | None = None) -> N
 
     today = datetime.now(timezone.utc).date().isoformat()
     try:
-        state = _get_doc("ops_alerts", "instagram_token_warning")
+        state = await asyncio.to_thread(_get_doc, "ops_alerts", "instagram_token_warning")
     except Exception:
         state = {}
+
     if state.get("last_sent_date") == today:
         return
 
@@ -1081,15 +1745,23 @@ async def _maybe_send_instagram_token_warning(*, reason: str | None = None) -> N
         f"Reason: {reason_text}\n"
         f"Days left: {left_text}\n"
         f"Expires at (UTC): {expires_at_iso}\n"
-        "Action: refresh INSTAGRAM_ACCESS_TOKEN on Render before expiry.\n\n"
+        "Action: refresh INSTAGRAM_ACCESS_TOKEN before expiry.\n\n"
         f"QHS_IG_TOKEN_WARNING_DATE={today}\n"
         f"QHS_IG_TOKEN_DAYS_LEFT={left_text}\n"
         f"QHS_IG_TOKEN_EXPIRES_AT={expires_at_iso}\n"
     )
-    sent = _send_email([ADMIN_ALERT_EMAIL], subject, body)
+
+    sent = await asyncio.to_thread(
+        _send_email,
+        [ADMIN_ALERT_EMAIL],
+        subject,
+        body,
+    )
+
     if sent:
         try:
-            _set_doc(
+            await asyncio.to_thread(
+                _set_doc,
                 "ops_alerts",
                 "instagram_token_warning",
                 {
@@ -1102,7 +1774,6 @@ async def _maybe_send_instagram_token_warning(*, reason: str | None = None) -> N
             )
         except Exception:
             log.warning("Could not persist instagram token warning state")
-
 
 def _format_amount_for_upi(amount: Decimal) -> str:
     normalized = amount.quantize(Decimal("0.01"))
@@ -1142,9 +1813,15 @@ async def _instagram_warning_loop() -> None:
     while True:
         try:
             await _maybe_send_instagram_token_warning()
+        except asyncio.CancelledError:
+            raise
         except Exception:
             log.exception("Instagram warning loop check failed")
-        await asyncio.sleep(24 * 60 * 60)
+
+        try:
+            await asyncio.sleep(24 * 60 * 60)
+        except asyncio.CancelledError:
+            raise
 
 
 # ─────────────────────────── Firestore helpers ───────────────────────────
@@ -1181,21 +1858,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.on_event("startup")
 async def _startup_background_tasks() -> None:
     global _instagram_warning_task
+    if os.environ.get("DISABLE_INSTAGRAM_WARNING_LOOP", "").strip().lower() in {"1", "true", "yes", "on"}:
+        log.info("Instagram warning loop disabled by env")
+        return
     if _instagram_warning_task is None:
         _instagram_warning_task = asyncio.create_task(_instagram_warning_loop())
-
 
 @app.on_event("shutdown")
 async def _shutdown_background_tasks() -> None:
     global _instagram_warning_task
     if _instagram_warning_task:
         _instagram_warning_task.cancel()
+        try:
+            await _instagram_warning_task
+        except asyncio.CancelledError:
+            pass
         _instagram_warning_task = None
-
 
 @app.exception_handler(gcloud_exc.PermissionDenied)
 async def _gcloud_permission_denied(_request: Request, exc: gcloud_exc.PermissionDenied):
@@ -1296,6 +1977,28 @@ async def newsletter_subscribe(body: NewsletterSubscribeRequest) -> dict[str, An
     return {"ok": True, "already_subscribed": False, "email": email_norm}
 
 
+@app.get("/api/geo/country")
+async def geo_country_hint(request: Request) -> dict[str, Any]:
+    hint = _resolve_geo_hint_from_request(request)
+    return {
+        "country_code": hint.get("country_code") or "IN",
+        "country_profile": hint.get("country_profile") or "india",
+        "source": hint.get("source") or "fallback",
+        "auto_detected": bool(hint.get("auto_detected")),
+        "allow_manual_override": True,
+    }
+
+
+@app.get("/api/combined-healings/events")
+async def combined_healings_events(limit: int = 10) -> dict[str, Any]:
+    rows = _build_combined_events(limit)
+    return {
+        "data": rows,
+        "count": len(rows),
+        "source": "panchang+formula",
+    }
+
+
 class InstantConsultCreateRequest(BaseModel):
     type_id: str = Field(min_length=3, max_length=64)
     question: str = Field(min_length=8, max_length=4000)
@@ -1321,6 +2024,8 @@ class InstantConsultPaymentClaimStatusRequest(BaseModel):
 
 class InstantConsultPaymentSessionRequest(BaseModel):
     payment_amount: int = Field(default=INSTANT_CONSULT_FEE_INR, ge=1, le=500000)
+    country_profile: str | None = Field(default=None, max_length=32)
+    country_code: str | None = Field(default=None, max_length=8)
 
 
 class InstantConsultPaymentWebhookRequest(BaseModel):
@@ -1331,6 +2036,56 @@ class InstantConsultPaymentWebhookRequest(BaseModel):
     provider_payment_id: str | None = Field(default=None, max_length=140)
     provider_event_id: str | None = Field(default=None, max_length=140)
     failure_reason: str | None = Field(default=None, max_length=240)
+
+
+class CombinedHealingWishInput(BaseModel):
+    id: str | None = Field(default=None, max_length=96)
+    text: str = Field(min_length=1, max_length=COMBINED_HEALING_MAX_WISH_LENGTH)
+
+
+class CombinedHealingUpsertRequest(BaseModel):
+    ritual_event_id: str | None = Field(default=None, max_length=64)
+    ritual_event_date: str | None = Field(default=None, max_length=32)
+    ritual_event_label: str | None = Field(default=None, max_length=120)
+    ritual_hindu_lunar_label: str | None = Field(default=None, max_length=180)
+    country_profile: str | None = Field(default=None, max_length=32)
+    country_code: str | None = Field(default=None, max_length=8)
+    wishes: list[CombinedHealingWishInput] = Field(default_factory=list, max_length=COMBINED_HEALING_MAX_WISHES)
+
+
+class CombinedHealingReviewSubmitRequest(BaseModel):
+    ritual_event_id: str | None = Field(default=None, max_length=64)
+    ritual_event_date: str | None = Field(default=None, max_length=32)
+    ritual_event_label: str | None = Field(default=None, max_length=120)
+    ritual_hindu_lunar_label: str | None = Field(default=None, max_length=180)
+
+
+class CombinedHealingCheckoutSessionRequest(BaseModel):
+    country_profile: str | None = Field(default=None, max_length=32)
+    country_code: str | None = Field(default=None, max_length=8)
+
+
+class CombinedHealingPaymentWebhookRequest(BaseModel):
+    session_id: str = Field(min_length=8, max_length=128)
+    status: str = Field(min_length=3, max_length=32)
+    amount: int = Field(ge=1, le=10000000)
+    currency: str = Field(default="INR", max_length=12)
+    provider_payment_id: str | None = Field(default=None, max_length=140)
+    provider_event_id: str | None = Field(default=None, max_length=140)
+    payment_reference: str | None = Field(default=None, max_length=120)
+    failure_reason: str | None = Field(default=None, max_length=240)
+
+
+class CombinedHealingAdminReviewRequest(BaseModel):
+    decision: str = Field(min_length=3, max_length=32)
+    selected_wish_ids: list[str] = Field(default_factory=list, max_length=COMBINED_HEALING_MAX_WISHES)
+    select_all: bool = False
+    invert_selection: bool = False
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CombinedHealingAdminSubmitReviewRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=500)
 
 
 def _serialize_consult_message(doc: Any) -> dict[str, Any]:
@@ -1463,16 +2218,24 @@ async def consult_my_messages(
 async def consult_payment_capabilities(identity: dict[str, Any] = Depends(require_client)) -> dict[str, Any]:
     _ = identity
     automation_enabled = _instant_payment_automation_enabled()
+    intl_enabled = _instant_international_payments_enabled()
     return {
         "provider": _instant_payment_provider(),
         "automation_enabled": automation_enabled,
         "manual_claim_enabled": _instant_manual_payment_claim_enabled(),
         "session_ttl_minutes": PAYMENT_SESSION_TTL_MINUTES,
         "fee_inr": INSTANT_CONSULT_FEE_INR,
+        "international_enabled": intl_enabled,
+        "international_rails": COMBINED_INTERNATIONAL_PAYMENT_RAILS,
         "client_notice": (
             "Payments unlock automatically after provider confirmation."
             if automation_enabled
             else "Automatic payment confirmation is not configured yet."
+        ),
+        "international_notice": (
+            "International payment rails are available."
+            if intl_enabled
+            else _combined_international_payment_message("Instant Consult")
         ),
     }
 
@@ -1487,6 +2250,12 @@ async def consult_create_payment_session(
 
     uid = str(identity.get("uid"))
     email = str(identity.get("email") or "").strip().lower()
+    requested_profile = _normalize_country_profile(body.country_profile, fallback="india")
+    if body.country_code:
+        requested_profile = _profile_from_country_code(body.country_code)
+    if requested_profile == "outside_india" and not _instant_international_payments_enabled():
+        raise HTTPException(409, _combined_international_payment_message("Instant Consult"))
+
     display_name = (
         str(identity.get("name") or "").strip()
         or str(identity.get("display_name") or "").strip()
@@ -1505,6 +2274,8 @@ async def consult_create_payment_session(
         "status": "awaiting_payment",
         "amount": INSTANT_CONSULT_FEE_INR,
         "currency": "INR",
+        "country_profile": requested_profile,
+        "country_code": (body.country_code or "").strip().upper() or None,
         "created_at": firestore.SERVER_TIMESTAMP,
         "updated_at": firestore.SERVER_TIMESTAMP,
         "expires_at": expires_at,
@@ -1525,6 +2296,8 @@ async def consult_create_payment_session(
         },
         "automation_enabled": _instant_payment_automation_enabled(),
         "manual_claim_enabled": _instant_manual_payment_claim_enabled(),
+        "international_enabled": _instant_international_payments_enabled(),
+        "international_rails": COMBINED_INTERNATIONAL_PAYMENT_RAILS,
         "client_notice": (
             "Scan and pay. Unlock happens automatically once payment is confirmed."
             if _instant_payment_automation_enabled()
@@ -1775,6 +2548,457 @@ async def consult_create_message(
     }
 
 
+@app.get("/api/combined-healings/my-request")
+async def combined_healings_my_request(identity: dict[str, Any] = Depends(require_client)) -> dict[str, Any]:
+    uid = str(identity.get("uid") or "").strip()
+    if not uid:
+        raise HTTPException(400, "Invalid client profile")
+
+    _req_ref, req_snap, _wishes, row = _combined_load_request_state(uid)
+    if not req_snap:
+        return {"ok": True, "exists": False, "data": None}
+    return {"ok": True, "exists": True, "data": row}
+
+
+@app.put("/api/combined-healings/my-request")
+async def combined_healings_upsert_request(
+    body: CombinedHealingUpsertRequest,
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
+    uid = str(identity.get("uid") or "").strip()
+    if not uid:
+        raise HTTPException(400, "Invalid client profile")
+    if not body.wishes:
+        raise HTTPException(400, "Add at least one wish")
+    if len(body.wishes) > COMBINED_HEALING_MAX_WISHES:
+        raise HTTPException(400, f"Maximum {COMBINED_HEALING_MAX_WISHES} wishes allowed")
+
+    req_ref, req_snap, existing_wishes, existing_row = _combined_load_request_state(uid)
+    existing_checkout_status = str((existing_row or {}).get("checkout_status") or "not_started").strip().lower()
+    if existing_checkout_status == "paid":
+        raise HTTPException(409, "Checkout is already completed for this request")
+
+    email = str(identity.get("email") or "").strip().lower()
+    display_name = _resolve_client_display_name(identity, email)
+
+    country_profile = _normalize_country_profile(
+        body.country_profile,
+        fallback=(existing_row or {}).get("country_profile") or "india",
+    )
+    country_code = (body.country_code or (existing_row or {}).get("country_code") or "").strip().upper()
+    if country_code:
+        country_profile = _profile_from_country_code(country_code)
+
+    next_event_id = (body.ritual_event_id or (existing_row or {}).get("ritual_event_id") or "").strip()
+    next_event_date = (body.ritual_event_date or (existing_row or {}).get("ritual_event_date") or "").strip()
+    next_event_label = (body.ritual_event_label or (existing_row or {}).get("ritual_event_label") or "").strip()
+    next_event_lunar_label = (
+        body.ritual_hindu_lunar_label
+        or (existing_row or {}).get("ritual_hindu_lunar_label")
+        or ""
+    ).strip()
+
+    if next_event_id and next_event_id not in COMBINED_EVENT_LABELS:
+        raise HTTPException(400, "Invalid ritual event")
+    if next_event_id and not next_event_label:
+        next_event_label = COMBINED_EVENT_LABELS.get(next_event_id) or next_event_id
+    if next_event_date:
+        try:
+            date.fromisoformat(next_event_date)
+        except ValueError as exc:
+            raise HTTPException(400, "Invalid ritual event date") from exc
+
+    existing_by_id = {item["id"]: item for item in existing_wishes if item.get("id")}
+    keep_ids: set[str] = set()
+    next_wishes: list[dict[str, Any]] = []
+
+    for idx, wish in enumerate(body.wishes):
+        text = str(wish.text or "").strip()
+        if not text:
+            raise HTTPException(400, f"Wish #{idx + 1} cannot be empty")
+        if len(text) > COMBINED_HEALING_MAX_WISH_LENGTH:
+            raise HTTPException(400, f"Wish #{idx + 1} exceeds {COMBINED_HEALING_MAX_WISH_LENGTH} characters")
+
+        raw_id = str(wish.id or "").strip()
+        if raw_id and not re.fullmatch(r"[A-Za-z0-9_-]{6,96}", raw_id):
+            raw_id = ""
+        existing = existing_by_id.get(raw_id) if raw_id else None
+
+        wish_id = raw_id if raw_id else f"wish_{secrets.token_hex(8)}"
+        while wish_id in keep_ids:
+            wish_id = f"wish_{secrets.token_hex(8)}"
+        keep_ids.add(wish_id)
+
+        existing_status = str((existing or {}).get("status") or "draft").strip().lower()
+        existing_text = str((existing or {}).get("text") or "").strip()
+        existing_note = str((existing or {}).get("admin_note") or "").strip()
+
+        if existing and text == existing_text and existing_status in COMBINED_WISH_STATUS_VALUES:
+            status = existing_status
+            admin_note = existing_note
+        else:
+            status = "corrected" if existing_status == "needs_correction" else "draft"
+            admin_note = ""
+
+        payload = {
+            "text": text,
+            "status": status,
+            "admin_note": admin_note,
+            "position": idx,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+        if not existing:
+            payload["created_at"] = firestore.SERVER_TIMESTAMP
+
+        _combined_wishes_collection(uid).document(wish_id).set(payload, merge=True)
+
+        next_wishes.append(
+            {
+                "id": wish_id,
+                "text": text,
+                "status": status,
+                "admin_note": admin_note,
+                "position": idx,
+            }
+        )
+
+    for existing in existing_wishes:
+        existing_id = str(existing.get("id") or "").strip()
+        if existing_id and existing_id not in keep_ids:
+            _combined_wishes_collection(uid).document(existing_id).delete()
+
+    checkout_status = existing_checkout_status if existing_checkout_status in {"not_started", "awaiting_payment", "paid"} else "not_started"
+    next_status = _combined_request_status_from_wishes(next_wishes, checkout_status=checkout_status)
+    if next_status != "approved_all" and checkout_status == "awaiting_payment":
+        checkout_status = "not_started"
+        next_status = _combined_request_status_from_wishes(next_wishes, checkout_status=checkout_status)
+
+    req_payload: dict[str, Any] = {
+        "uid": uid,
+        "email": email,
+        "display_name": display_name,
+        "country_profile": country_profile,
+        "country_code": country_code or None,
+        "ritual_event_id": next_event_id or None,
+        "ritual_event_date": next_event_date or None,
+        "ritual_event_label": next_event_label or None,
+        "ritual_hindu_lunar_label": next_event_lunar_label or None,
+        "status": next_status,
+        "checkout_status": checkout_status,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }
+    if not req_snap:
+        req_payload["review_count"] = 0
+        req_payload["created_at"] = firestore.SERVER_TIMESTAMP
+
+    req_ref.set(req_payload, merge=True)
+
+    _req_ref, final_snap, final_wishes, final_row = _combined_load_request_state(uid)
+    if not final_snap:
+        raise HTTPException(500, "Unable to persist combined-healings request")
+    return {"ok": True, "data": final_row}
+
+
+@app.post("/api/combined-healings/my-request/review")
+async def combined_healings_submit_review(
+    body: CombinedHealingReviewSubmitRequest,
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
+    uid = str(identity.get("uid") or "").strip()
+    if not uid:
+        raise HTTPException(400, "Invalid client profile")
+
+    req_ref, req_snap, wishes, row = _combined_load_request_state(uid)
+    if not req_snap or not row:
+        raise HTTPException(404, "No combined-healings request found")
+    if str(row.get("checkout_status") or "").strip().lower() == "paid":
+        raise HTTPException(409, "Checkout is already completed")
+    if not wishes:
+        raise HTTPException(400, "Add at least one wish before review")
+
+    ritual_event_id = (body.ritual_event_id or row.get("ritual_event_id") or "").strip()
+    ritual_event_date = (body.ritual_event_date or row.get("ritual_event_date") or "").strip()
+    ritual_event_label = (body.ritual_event_label or row.get("ritual_event_label") or "").strip()
+    ritual_hindu_lunar_label = (body.ritual_hindu_lunar_label or row.get("ritual_hindu_lunar_label") or "").strip()
+
+    if not ritual_event_id or ritual_event_id not in COMBINED_EVENT_LABELS:
+        raise HTTPException(400, "Select a valid ritual event before review")
+    if not ritual_event_date:
+        raise HTTPException(400, "Select the ritual date before review")
+
+    try:
+        date.fromisoformat(ritual_event_date)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid ritual date") from exc
+
+    if all(str(item.get("status") or "").strip().lower() == "approved" for item in wishes):
+        raise HTTPException(409, "All wishes are already approved. No further review cycles are allowed.")
+
+    for wish in wishes:
+        wish_id = str(wish.get("id") or "").strip()
+        if not wish_id:
+            continue
+        curr = str(wish.get("status") or "draft").strip().lower()
+        if curr == "approved":
+            continue
+        _combined_wishes_collection(uid).document(wish_id).set(
+            {
+                "status": "in_review",
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+    next_review_count = int(row.get("review_count") or 0) + 1
+    req_ref.set(
+        {
+            "review_count": next_review_count,
+            "status": "in_review",
+            "checkout_status": "not_started",
+            "ritual_event_id": ritual_event_id,
+            "ritual_event_date": ritual_event_date,
+            "ritual_event_label": ritual_event_label or COMBINED_EVENT_LABELS.get(ritual_event_id),
+            "ritual_hindu_lunar_label": ritual_hindu_lunar_label or row.get("ritual_hindu_lunar_label") or None,
+            "last_review_submitted_at": firestore.SERVER_TIMESTAMP,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+
+    _req_ref, final_snap, _final_wishes, final_row = _combined_load_request_state(uid)
+    if not final_snap:
+        raise HTTPException(500, "Unable to submit combined-healings review")
+    return {
+        "ok": True,
+        "data": final_row,
+        "client_notice": "Review submitted. Wait for admin approvals or correction notes.",
+    }
+
+
+@app.post("/api/combined-healings/my-request/cancel")
+async def combined_healings_cancel(identity: dict[str, Any] = Depends(require_client)) -> dict[str, Any]:
+    uid = str(identity.get("uid") or "").strip()
+    if not uid:
+        raise HTTPException(400, "Invalid client profile")
+
+    _req_ref, req_snap, _wishes, row = _combined_load_request_state(uid)
+    if not req_snap:
+        return {"ok": True, "deleted": False}
+    if str((row or {}).get("checkout_status") or "").strip().lower() == "paid":
+        raise HTTPException(409, "Checkout is completed. Cancellation is not available.")
+
+    _combined_hard_delete_request(uid)
+    return {"ok": True, "deleted": True}
+
+
+@app.post("/api/combined-healings/my-request/checkout/session")
+async def combined_healings_create_checkout_session(
+    body: CombinedHealingCheckoutSessionRequest,
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
+    uid = str(identity.get("uid") or "").strip()
+    if not uid:
+        raise HTTPException(400, "Invalid client profile")
+
+    req_ref, req_snap, wishes, row = _combined_load_request_state(uid)
+    if not req_snap or not row:
+        raise HTTPException(404, "No combined-healings request found")
+    if not wishes:
+        raise HTTPException(400, "Add at least one wish before checkout")
+    if not row.get("ritual_event_id") or not row.get("ritual_event_date"):
+        raise HTTPException(400, "Select ritual date before checkout")
+    if not all(str(item.get("status") or "").strip().lower() == "approved" for item in wishes):
+        raise HTTPException(409, "Checkout unlocks only after every wish is approved")
+
+    request_profile = _normalize_country_profile(row.get("country_profile"), fallback="india")
+    checkout_profile = _normalize_country_profile(body.country_profile, fallback=request_profile)
+    checkout_country_code = (body.country_code or row.get("country_code") or "").strip().upper()
+    if checkout_country_code:
+        checkout_profile = _profile_from_country_code(checkout_country_code)
+
+    if checkout_profile == "outside_india" and not _combined_international_payments_enabled():
+        raise HTTPException(409, _combined_international_payment_message("Combined Healings"))
+
+    if str(row.get("checkout_status") or "").strip().lower() == "paid":
+        raise HTTPException(409, "Checkout already completed")
+
+    wish_count = len(wishes)
+    amount = _combined_total_amount(checkout_profile, wish_count)
+    currency = _combined_currency(checkout_profile)
+    if amount <= 0:
+        raise HTTPException(400, "Invalid checkout amount")
+
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=COMBINED_PAYMENT_SESSION_TTL_MINUTES)
+    session_id = f"chpay_{secrets.token_hex(10)}"
+
+    session_payload: dict[str, Any] = {
+        "uid": uid,
+        "request_uid": uid,
+        "email": row.get("email") or str(identity.get("email") or "").strip().lower(),
+        "display_name": row.get("display_name") or _resolve_client_display_name(identity, str(identity.get("email") or "").strip().lower()),
+        "provider": _combined_payment_provider(),
+        "status": "awaiting_payment",
+        "amount": amount,
+        "currency": currency,
+        "wish_count": wish_count,
+        "country_profile": checkout_profile,
+        "country_code": checkout_country_code or None,
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+        "expires_at": expires_at,
+    }
+
+    session_ref = get_firestore().collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION).document(session_id)
+    session_ref.set(session_payload, merge=True)
+    session_snap = session_ref.get()
+    session = _serialize_combined_payment_session(session_snap)
+
+    response_data = dict(session)
+    if checkout_profile == "india":
+        response_data["qr_src"] = f"/api/payments/upi-qr/combined-healings?amount={amount}&tr={session_id}"
+        response_data["upi_intent"] = _upi_intent_for_amount(Decimal(amount), payment_ref=session_id)
+
+    req_ref.set(
+        {
+            "country_profile": checkout_profile,
+            "country_code": checkout_country_code or None,
+            "checkout_status": "awaiting_payment",
+            "checkout_session_id": session_id,
+            "status": "checkout_pending",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+
+    return {
+        "ok": True,
+        "data": response_data,
+        "automation_enabled": _combined_payment_automation_enabled(),
+        "international_enabled": _combined_international_payments_enabled(),
+        "international_rails": COMBINED_INTERNATIONAL_PAYMENT_RAILS,
+        "client_notice": (
+            "Scan and pay. Checkout confirms automatically once payment is detected."
+            if _combined_payment_automation_enabled() and checkout_profile == "india"
+            else (
+                "India checkout session created. Manual confirmation may be required."
+                if checkout_profile == "india"
+                else "International session created. Follow listed payment rails."
+            )
+        ),
+    }
+
+
+@app.get("/api/combined-healings/my-request/checkout/session/{session_id}")
+async def combined_healings_get_checkout_session(
+    session_id: str,
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
+    uid = str(identity.get("uid") or "").strip()
+    session_ref = get_firestore().collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION).document(session_id)
+    session_snap = session_ref.get()
+    if not session_snap.exists:
+        raise HTTPException(404, "Checkout session not found")
+
+    session_data = session_snap.to_dict() or {}
+    if str(session_data.get("uid") or "") != uid:
+        raise HTTPException(403, "Checkout session does not belong to this account")
+
+    status = str(session_data.get("status") or "").strip().lower()
+    if status in {"created", "awaiting_payment"} and _is_payment_session_expired(session_data):
+        session_ref.set({"status": "expired", "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+        session_snap = session_ref.get()
+        session_data = session_snap.to_dict() or {}
+
+    row = _serialize_combined_payment_session(session_snap)
+    if row.get("country_profile") == "india":
+        amount = int(row.get("amount") or 0)
+        row["qr_src"] = f"/api/payments/upi-qr/combined-healings?amount={amount}&tr={session_id}"
+        row["upi_intent"] = _upi_intent_for_amount(Decimal(amount), payment_ref=session_id)
+
+    return {
+        "ok": True,
+        "data": row,
+        "verified": str(row.get("status") or "") == "paid",
+    }
+
+
+@app.post("/api/payments/webhooks/combined-healings")
+async def combined_healings_payment_webhook(
+    body: CombinedHealingPaymentWebhookRequest,
+    x_qhs_payment_secret: str | None = Header(default=None, alias="X-QHS-Payment-Secret"),
+) -> dict[str, Any]:
+    configured_secret = _combined_payment_webhook_secret()
+    if not configured_secret:
+        raise HTTPException(503, "Combined-healings payment webhook is not configured")
+
+    incoming_secret = (x_qhs_payment_secret or "").strip()
+    if not incoming_secret or not hmac.compare_digest(incoming_secret, configured_secret):
+        raise HTTPException(401, "Invalid webhook secret")
+
+    provider_status = str(body.status or "").strip().lower()
+    if provider_status in {"paid", "success", "captured", "txn_success", "completed"}:
+        next_status = "paid"
+    elif provider_status in {"failed", "cancelled", "canceled", "expired", "timeout", "txn_failure"}:
+        next_status = "failed"
+    else:
+        raise HTTPException(400, "Unsupported webhook payment status")
+
+    session_ref = get_firestore().collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION).document(body.session_id)
+    session_snap = session_ref.get()
+    if not session_snap.exists:
+        raise HTTPException(404, "Checkout session not found")
+
+    existing = session_snap.to_dict() or {}
+    current_status = str(existing.get("status") or "").strip().lower()
+    if current_status == "paid" and next_status == "paid":
+        return {"ok": True, "data": _serialize_combined_payment_session(session_snap), "idempotent": True}
+
+    expected_amount = int(existing.get("amount") or 0)
+    if int(body.amount) != expected_amount:
+        raise HTTPException(400, "Checkout amount mismatch")
+
+    expected_currency = str(existing.get("currency") or "INR").strip().upper()
+    incoming_currency = str(body.currency or expected_currency).strip().upper()
+    if incoming_currency != expected_currency:
+        raise HTTPException(400, "Checkout currency mismatch")
+
+    patch: dict[str, Any] = {
+        "status": next_status,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+        "provider_event_id": (body.provider_event_id or "").strip() or None,
+        "provider_payment_id": (body.provider_payment_id or "").strip() or None,
+        "payment_reference": (body.payment_reference or "").strip() or None,
+        "failure_reason": (body.failure_reason or "").strip() or None,
+    }
+    if next_status == "paid":
+        patch["paid_at"] = firestore.SERVER_TIMESTAMP
+        patch["failure_reason"] = None
+
+    session_ref.set(patch, merge=True)
+    updated_snap = session_ref.get()
+    session_row = _serialize_combined_payment_session(updated_snap)
+
+    request_uid = str(existing.get("request_uid") or existing.get("uid") or "").strip()
+    if next_status == "paid" and request_uid:
+        req_ref = _combined_request_ref(request_uid)
+        req_ref.set(
+            {
+                "checkout_status": "paid",
+                "checkout_session_id": body.session_id,
+                "checkout_paid_at": firestore.SERVER_TIMESTAMP,
+                "status": "checkout_paid",
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+        _req_ref, req_snap, _wishes, req_row = _combined_load_request_state(request_uid)
+        if req_snap and req_row:
+            _send_combined_checkout_emails(req_row)
+
+    return {"ok": True, "data": session_row}
+
+
 async def _upi_qr_response_for_amount(amount: Decimal, payment_ref: str | None = None) -> Response:
     rounded = amount.quantize(Decimal("0.01"))
     if rounded <= 0:
@@ -1818,6 +3042,12 @@ async def _upi_qr_response_for_amount(amount: Decimal, payment_ref: str | None =
 @app.get("/api/payments/upi-qr/instant-consult")
 async def upi_qr_instant_consult(tr: str | None = None) -> Response:
     return await _upi_qr_response_for_amount(Decimal(INSTANT_CONSULT_FEE_INR), payment_ref=tr)
+
+
+@app.get("/api/payments/upi-qr/combined-healings")
+async def upi_qr_combined_healings(amount: int, tr: str | None = None) -> Response:
+    safe_amount = max(1, min(int(amount), 10_000_000))
+    return await _upi_qr_response_for_amount(Decimal(safe_amount), payment_ref=tr)
 
 
 @app.get("/api/payments/upi-qr/booking-consultation")
@@ -1898,6 +3128,32 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
             if status in consult_counts:
                 consult_counts[status] += 1
 
+    combined_counts: dict[str, int] = {
+        "draft": 0,
+        "in_review": 0,
+        "needs_correction": 0,
+        "approved_all": 0,
+        "checkout_pending": 0,
+        "checkout_paid": 0,
+    }
+    combined_checkout_counts: dict[str, int] = {"not_started": 0, "awaiting_payment": 0, "paid": 0}
+    combined_total_review_count = 0
+    try:
+        docs = db.collection(COMBINED_HEALING_COLLECTION).stream()
+        for d in docs:
+            data = d.to_dict() or {}
+            status = str(data.get("status") or "draft").strip().lower()
+            checkout_status = str(data.get("checkout_status") or "not_started").strip().lower()
+            if status in combined_counts:
+                combined_counts[status] += 1
+            else:
+                combined_counts["draft"] += 1
+            if checkout_status in combined_checkout_counts:
+                combined_checkout_counts[checkout_status] += 1
+            combined_total_review_count += int(data.get("review_count") or 0)
+    except Exception:
+        pass
+
     return {
         "newsletter_subscribers": sub_count,
         "instagram": {
@@ -1913,6 +3169,14 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
             "done": consult_counts["done"],
             "total": sum(consult_counts.values()),
             "fee_inr": INSTANT_CONSULT_FEE_INR,
+        },
+        "combined_healings": {
+            **combined_counts,
+            "total": sum(combined_counts.values()),
+            "checkout": combined_checkout_counts,
+            "total_review_count": combined_total_review_count,
+            "fee_inr_per_wish": COMBINED_HEALING_FEE_INR_PER_WISH,
+            "fee_usd_per_wish": COMBINED_HEALING_FEE_USD_PER_WISH,
         },
         "firebase_configured": bool(os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")),
         "config_present": True,
@@ -2170,6 +3434,207 @@ async def admin_reply_consult_message(
         "data": _serialize_consult_message(final_doc),
         "email_sent": email_sent,
     }
+
+
+@app.get("/api/admin/combined-healings/requests")
+async def admin_list_combined_healings_requests(
+    status: str | None = None,
+    checkout_status: str | None = None,
+    country_profile: str | None = None,
+    query: str | None = None,
+    sort_by: str = "updated_at",
+    sort_dir: str = "desc",
+    limit: int = 200,
+    _=Depends(require_admin),
+) -> dict[str, Any]:
+    safe_limit = max(1, min(limit, 500))
+    rows: list[dict[str, Any]] = []
+
+    docs = list(get_firestore().collection(COMBINED_HEALING_COLLECTION).limit(safe_limit).stream())
+    for doc in docs:
+        uid = str(doc.id)
+        wish_docs = list(_combined_wishes_collection(uid).stream())
+        wishes = [_serialize_combined_wish(item) for item in wish_docs]
+        rows.append(_serialize_combined_request(doc, wishes))
+
+    status_filter = str(status or "").strip().lower()
+    if status_filter:
+        rows = [row for row in rows if str(row.get("status") or "").strip().lower() == status_filter]
+
+    checkout_filter = str(checkout_status or "").strip().lower()
+    if checkout_filter:
+        rows = [
+            row
+            for row in rows
+            if str(row.get("checkout_status") or "").strip().lower() == checkout_filter
+        ]
+
+    country_filter = _normalize_country_profile(country_profile, fallback="") if country_profile else ""
+    if country_filter:
+        rows = [
+            row
+            for row in rows
+            if _normalize_country_profile(row.get("country_profile"), fallback="india") == country_filter
+        ]
+
+    q = str(query or "").strip().lower()
+    if q:
+        filtered: list[dict[str, Any]] = []
+        for row in rows:
+            haystack_parts = [
+                str(row.get("display_name") or ""),
+                str(row.get("email") or ""),
+                str(row.get("ritual_event_label") or row.get("ritual_event_id") or ""),
+                str(row.get("status") or ""),
+                str(row.get("checkout_status") or ""),
+                str(row.get("review_count") or ""),
+            ]
+            for wish in row.get("wishes") or []:
+                if isinstance(wish, dict):
+                    haystack_parts.append(str(wish.get("text") or ""))
+                    haystack_parts.append(str(wish.get("admin_note") or ""))
+            haystack = " ".join(haystack_parts).lower()
+            if q in haystack:
+                filtered.append(row)
+        rows = filtered
+
+    key = str(sort_by or "updated_at").strip().lower()
+    reverse = str(sort_dir or "desc").strip().lower() != "asc"
+    if key == "review_count":
+        rows.sort(key=lambda item: int(item.get("review_count") or 0), reverse=reverse)
+    elif key == "wish_count":
+        rows.sort(key=lambda item: int(item.get("wish_count") or 0), reverse=reverse)
+    elif key == "checkout_status":
+        rows.sort(key=lambda item: str(item.get("checkout_status") or ""), reverse=reverse)
+    else:
+        rows.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=reverse)
+
+    return {"data": rows, "count": len(rows)}
+
+
+@app.put("/api/admin/combined-healings/requests/{uid}/review")
+async def admin_review_combined_healings_request(
+    uid: str,
+    body: CombinedHealingAdminReviewRequest,
+    _=Depends(require_admin),
+) -> dict[str, Any]:
+    decision = str(body.decision or "").strip().lower()
+    if decision not in {"approved", "needs_correction"}:
+        raise HTTPException(400, "Decision must be either 'approved' or 'needs_correction'")
+
+    req_ref, req_snap, wishes, row = _combined_load_request_state(uid)
+    if not req_snap or not row:
+        raise HTTPException(404, "Combined-healings request not found")
+    if str(row.get("checkout_status") or "").strip().lower() == "paid":
+        raise HTTPException(409, "Checkout is already paid for this request")
+    if not wishes:
+        raise HTTPException(400, "No wishes available to review")
+
+    all_ids = [str(item.get("id") or "").strip() for item in wishes if item.get("id")]
+    selected = set(all_ids if body.select_all else [str(item).strip() for item in (body.selected_wish_ids or []) if str(item).strip()])
+    selected = {item for item in selected if item in all_ids}
+    if body.invert_selection:
+        selected = set(all_ids) - selected
+    if not selected:
+        raise HTTPException(400, "Select at least one wish to review")
+
+    note_text = (body.note or "").strip()
+    for wish_id in selected:
+        patch = {
+            "status": decision,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+        if decision == "needs_correction":
+            patch["admin_note"] = note_text
+        else:
+            patch["admin_note"] = ""
+        _combined_wishes_collection(uid).document(wish_id).set(patch, merge=True)
+
+    _req_ref, final_snap, final_wishes, final_row = _combined_load_request_state(uid)
+    if not final_snap or not final_row:
+        raise HTTPException(500, "Unable to update review state")
+
+    checkout_state = str(final_row.get("checkout_status") or "not_started").strip().lower()
+    next_status = _combined_request_status_from_wishes(final_wishes, checkout_status=checkout_state)
+    if next_status != "approved_all" and checkout_state == "awaiting_payment":
+        checkout_state = "not_started"
+        next_status = _combined_request_status_from_wishes(final_wishes, checkout_status=checkout_state)
+
+    req_ref.set(
+        {
+            "status": next_status,
+            "checkout_status": checkout_state,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+            "admin_last_action": decision,
+            "admin_last_note": note_text if decision == "needs_correction" else "",
+        },
+        merge=True,
+    )
+
+    _req_ref, final_snap, _final_wishes, final_row = _combined_load_request_state(uid)
+    if not final_snap or not final_row:
+        raise HTTPException(500, "Unable to reload updated request")
+    return {"ok": True, "data": final_row}
+
+
+@app.post("/api/admin/combined-healings/requests/{uid}/submit-review")
+async def admin_submit_combined_healings_review(
+    uid: str,
+    body: CombinedHealingAdminSubmitReviewRequest,
+    _=Depends(require_admin),
+) -> dict[str, Any]:
+    req_ref, req_snap, wishes, row = _combined_load_request_state(uid)
+    if not req_snap or not row:
+        raise HTTPException(404, "Combined-healings request not found")
+    if str(row.get("checkout_status") or "").strip().lower() == "paid":
+        raise HTTPException(409, "Checkout is already paid for this request")
+    if not wishes:
+        raise HTTPException(400, "No wishes available for review submission")
+
+    status = _combined_request_status_from_wishes(wishes, checkout_status=row.get("checkout_status") or "not_started")
+    if status == "draft":
+        status = "in_review"
+
+    admin_note = (body.note or "").strip()
+    req_ref.set(
+        {
+            "status": status,
+            "admin_review_published_at": firestore.SERVER_TIMESTAMP,
+            "admin_last_note": admin_note,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+
+    if row.get("email"):
+        if status == "approved_all":
+            text_body = (
+                "Namaste from Quantum Healing Space,\n\n"
+                "Great news. All wishes in your Combined Healings request are approved. "
+                "You can now proceed to checkout whenever ready.\n\n"
+                "Warmly,\nQuantum Healing Space"
+            )
+            _send_email([str(row.get("email"))], "[QHS] Combined Healings review approved", text_body)
+        else:
+            items: list[str] = []
+            for idx, wish in enumerate(wishes, start=1):
+                if str(wish.get("status") or "") == "needs_correction":
+                    note = str(wish.get("admin_note") or "").strip() or "Please revise this wish."
+                    items.append(f"{idx}. {wish.get('text') or ''}\n   Note: {note}")
+            item_block = "\n".join(items) if items else "Please review your latest wish statuses in the portal."
+            text_body = (
+                "Namaste from Quantum Healing Space,\n\n"
+                "Your Combined Healings review has been updated.\n"
+                "Some wishes need correction before final approval.\n\n"
+                f"{item_block}\n\n"
+                "Warmly,\nQuantum Healing Space"
+            )
+            _send_email([str(row.get("email"))], "[QHS] Combined Healings review update", text_body)
+
+    _req_ref, final_snap, _final_wishes, final_row = _combined_load_request_state(uid)
+    if not final_snap or not final_row:
+        raise HTTPException(500, "Unable to reload updated request")
+    return {"ok": True, "data": final_row}
 
 
 @app.get("/api/admin/config")

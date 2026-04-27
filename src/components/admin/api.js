@@ -99,6 +99,39 @@ export const adminApi = {
       body: { status, note },
     }),
 
+  listCombinedHealingsRequests: ({
+    status,
+    checkoutStatus,
+    countryProfile,
+    query,
+    sortBy,
+    sortDir,
+    limit,
+  } = {}) => {
+    const qs = new URLSearchParams();
+    if (status) qs.set('status', status);
+    if (checkoutStatus) qs.set('checkout_status', checkoutStatus);
+    if (countryProfile) qs.set('country_profile', countryProfile);
+    if (query) qs.set('query', query);
+    if (sortBy) qs.set('sort_by', sortBy);
+    if (sortDir) qs.set('sort_dir', sortDir);
+    if (limit) qs.set('limit', String(limit));
+    const suffix = qs.toString();
+    return apiFetch(`/api/admin/combined-healings/requests${suffix ? `?${suffix}` : ''}`);
+  },
+
+  reviewCombinedHealingRequest: (uid, payload) =>
+    apiFetch(`/api/admin/combined-healings/requests/${encodeURIComponent(uid)}/review`, {
+      method: 'PUT',
+      body: payload,
+    }),
+
+  submitCombinedHealingReview: (uid, note = '') =>
+    apiFetch(`/api/admin/combined-healings/requests/${encodeURIComponent(uid)}/submit-review`, {
+      method: 'POST',
+      body: { note },
+    }),
+
   getConfig: () => apiFetch('/api/admin/config'),
   putConfig: (patch) => apiFetch('/api/admin/config', { method: 'PUT', body: patch }),
 

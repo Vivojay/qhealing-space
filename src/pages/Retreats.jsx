@@ -3,6 +3,7 @@ import { motion, useScroll, useTransform } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Clock, MapPin } from 'lucide-react';
 import Footer from '@/components/wellness/Footer';
+import { useTheme } from '@/context/ThemeContext';
 import { RETREATS } from '@/constants/retreats';
 import elementTiagoWolf from '../../attached_assets/elements/tiago-wolf-W4CTDtL2LQo-unsplash.jpg';
 import texturePawelSlate from '../../attached_assets/textures/pawel-czerwinski-edxkIZwKvJk-unsplash.jpg';
@@ -124,8 +125,12 @@ function RetreatRow({ r, i }) {
 
 export default function Retreats() {
   const heroRef = useRef(null);
+  const { isDark } = useTheme();
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '28%']);
+  const heroOverlayBackground = isDark
+    ? 'linear-gradient(to top, var(--bg) 0%, rgba(0,0,0,0.24) 55%, transparent 100%)'
+    : 'linear-gradient(to top, var(--bg) 0%, rgba(244,242,236,0.58) 11%, rgba(12,10,9,0.16) 32%, transparent 54%)';
 
   return (
     <div style={{ background: 'var(--bg)' }}>
@@ -134,7 +139,7 @@ export default function Retreats() {
         <motion.div style={{ y }} className="absolute inset-0 scale-110">
           <img src="https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1800&q=90" alt="" className="w-full h-full object-cover opacity-45" />
         </motion.div>
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, var(--bg) 0%, rgba(0,0,0,0.24) 55%, transparent 100%)' }} />
+        <div className="absolute inset-0" style={{ background: heroOverlayBackground }} />
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 80% 30%, var(--accent-dim), transparent 55%)' }} />
 
         <div className="absolute bottom-0 left-0 right-0 p-8 lg:p-16">

@@ -3,6 +3,7 @@ import { motion, useScroll, useTransform } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Clock3, Sparkles } from 'lucide-react';
 import Footer from '@/components/wellness/Footer';
+import { useTheme } from '@/context/ThemeContext';
 import textureVadym from '../assets/textures/vadym-alyekseyenko-0ARnshcVqfc-unsplash.jpg';
 
 const SERVICE_SECTIONS = [
@@ -494,10 +495,116 @@ const BILLING_PRICE_BY_DURATION = {
 
 const BILLING_PRICE_BY_SERVICE_ID = {
   indian: {
-    // Add per-modality overrides by service id, e.g. 1: 'INR 4,250'
+    1: 'INR 7,400',
+    2: 'INR 4,000',
+    3: 'INR 3,500',
+    4: 'INR 3,600',
+    5: 'INR 3,100',
+    6: 'INR 4,050',
+    7: 'INR 4,750',
+    8: 'INR 3,750',
+    9: 'INR 3,950',
+    10: 'INR 3,850',
+    11: 'INR 3,320',
+    12: 'INR 4,120',
+    13: 'INR 3,080',
+    14: 'INR 7,580',
+    15: 'INR 2,720',
+    16: 'INR 3,280',
+    17: 'INR 5,220',
+    18: 'INR 7,560',
+    19: 'INR 3,740',
+    20: 'INR 5,340',
+    21: 'INR 5,300',
+    22: 'INR 11,050',
+    23: 'INR 4,100',
+    24: 'INR 4,200',
+    25: 'INR 10,950',
+    26: 'INR 4,650',
+    27: 'INR 5,550',
+    28: 'INR 3,050',
+    29: 'INR 5,350',
+    30: 'INR 3,150',
+    31: 'INR 3,020',
+    32: 'INR 2,720',
+    33: 'INR 2,780',
+    34: 'INR 3,080',
+    35: 'INR 3,020',
+    36: 'INR 3,280',
+    37: 'INR 3,120',
+    38: 'INR 3,360',
+    39: 'INR 3,740',
+    40: 'INR 3,240',
+    41: 'INR 3,200',
+    42: 'INR 9,850',
+    43: 'INR 7,600',
+    44: 'INR 11,150',
+    45: 'INR 3,800',
+    46: 'INR 4,050',
+    47: 'INR 6,150',
+    48: 'INR 6,250',
+    49: 'INR 5,350',
+    50: 'INR 3,150',
+    51: 'INR 125,060',
+    52: 'INR 5,520',
+    53: 'INR 5,180',
+    54: 'INR 5,480',
   },
   nonIndian: {
-    // Add per-modality overrides by service id, e.g. 1: 'USD 115'
+    1: 'USD 178',
+    2: 'USD 101',
+    3: 'USD 91',
+    4: 'USD 92',
+    5: 'USD 84',
+    6: 'USD 101',
+    7: 'USD 118',
+    8: 'USD 97',
+    9: 'USD 100',
+    10: 'USD 98',
+    11: 'USD 87',
+    12: 'USD 102',
+    13: 'USD 83',
+    14: 'USD 180',
+    15: 'USD 73',
+    16: 'USD 86',
+    17: 'USD 128',
+    18: 'USD 180',
+    19: 'USD 97',
+    20: 'USD 130',
+    21: 'USD 129',
+    22: 'USD 266',
+    23: 'USD 102',
+    24: 'USD 103',
+    25: 'USD 265',
+    26: 'USD 117',
+    27: 'USD 132',
+    28: 'USD 83',
+    29: 'USD 130',
+    30: 'USD 84',
+    31: 'USD 77',
+    32: 'USD 68',
+    33: 'USD 73',
+    34: 'USD 77',
+    35: 'USD 83',
+    36: 'USD 86',
+    37: 'USD 84',
+    38: 'USD 87',
+    39: 'USD 97',
+    40: 'USD 86',
+    41: 'USD 85',
+    42: 'USD 239',
+    43: 'USD 181',
+    44: 'USD 267',
+    45: 'USD 98',
+    46: 'USD 101',
+    47: 'USD 148',
+    48: 'USD 153',
+    49: 'USD 130',
+    50: 'USD 84',
+    51: 'USD 2,101',
+    52: 'USD 132',
+    53: 'USD 127',
+    54: 'USD 131',
   },
 };
 
@@ -659,8 +766,12 @@ function SectionTable({ section, index, billingProfile }) {
 
 export default function Services() {
   const heroRef = useRef(null);
+  const { isDark } = useTheme();
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '28%']);
+  const heroOverlayBackground = isDark
+    ? 'linear-gradient(to top, var(--bg) 0%, rgba(12,10,9,0.36) 58%, transparent 100%)'
+    : 'linear-gradient(to top, var(--bg) 0%, rgba(244,242,236,0.58) 10%, rgba(12,10,9,0.2) 30%, transparent 52%)';
   const [billingProfile, setBillingProfile] = useState('indian');
   const [activeSectionFilters, setActiveSectionFilters] = useState([]);
 
@@ -707,7 +818,7 @@ export default function Services() {
             className="w-full h-full object-cover opacity-42"
           />
         </motion.div>
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, var(--bg) 0%, rgba(12,10,9,0.36) 58%, transparent 100%)' }} />
+        <div className="absolute inset-0" style={{ background: heroOverlayBackground }} />
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 80% 24%, rgba(107,160,204,0.24), transparent 55%)' }} />
 
         <div className="absolute bottom-0 left-0 right-0 p-8 lg:p-16">

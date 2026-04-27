@@ -104,6 +104,18 @@ export default function Footer() {
                 >
                   Instant Consult <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={2} />
                 </Link>
+                <Link
+                  to="/auth?mode=signup&next=%2Fcombined-healings"
+                  onClick={scrollToTopImmediate}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full text-xs tracking-[0.2em] uppercase text-center hover-special"
+                  style={{
+                    border: '1px solid var(--special-border)',
+                    color: 'var(--special-accent)',
+                    background: 'var(--special-bg)',
+                  }}
+                >
+                  Combined Healings <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={2} />
+                </Link>
               </div>
             </motion.div>
           </div>
@@ -126,6 +138,7 @@ export default function Footer() {
                 {[
                   ['Home', '/'],
                   ['Healings', '/healings'],
+                  ['Combined Healings', '/combined-healings'],
                   ['Global Practices', '/global-practices'],
                   ['Retreats', '/retreats'],
                   ['Hindu Rituals', '/hindu-rituals'],

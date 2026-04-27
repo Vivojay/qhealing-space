@@ -37,6 +37,13 @@ const DEFAULT_PAYMENT_CAPABILITIES = {
   provider: 'paytm',
   automation_enabled: false,
   manual_claim_enabled: false,
+  international_enabled: false,
+  international_rails: [
+    { id: 'wise', name: 'Wise', detail: 'Best for direct bank transfer into India.' },
+    { id: 'remitly', name: 'Remitly', detail: 'Fast INR settlement to India account rails.' },
+    { id: 'western-union', name: 'Western Union', detail: 'Global transfer rails with India payout support.' },
+  ],
+  international_notice: 'International checkout is currently disabled for Instant Consult.',
   session_ttl_minutes: 30,
   fee_inr: INSTANT_FEE_AMOUNT,
 };
@@ -317,6 +324,9 @@ export default function InstantConsult() {
   const [paymentQrSrc, setPaymentQrSrc] = useState(PAYMENT_QR_SRC);
   const [paymentUpiIntent, setPaymentUpiIntent] = useState('');
   const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [countryProfile, setCountryProfile] = useState('india');
+  const [countryCode, setCountryCode] = useState('IN');
+  const [geoLoaded, setGeoLoaded] = useState(false);
 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -325,10 +335,12 @@ export default function InstantConsult() {
   const [sendError, setSendError] = useState('');
 
   const emailVerificationPending = useMemo(() => isUnverifiedPasswordUser(authUser), [authUser]);
+  const internationalEnabled = !!paymentCapabilities?.international_enabled;
   const paymentMode = useMemo(() => {
-    if (paymentCapabilities?.automation_enabled) return 'auto';
-    return 'blocked';
-  }, [paymentCapabilities]);
+    if (countryProfile === 'outside_india' && !internationalEnabled) return 'international_blocked';
+    if (!paymentCapabilities?.automation_enabled) return 'blocked';
+    return 'auto';
+  }, [paymentCapabilities, countryProfile, internationalEnabled]);
 
   const selectedType = useMemo(
     () => types.find((type) => type.id === selectedTypeId) || types[0] || null,
@@ -420,6 +432,34 @@ export default function InstantConsult() {
         setSelectedTypeId((prev) => (merged.some((item) => item.id === prev) ? prev : merged[0].id));
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(apiUrl('/api/geo/country'))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await parseApiError(res));
+        return res.json();
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const profile = String(payload?.country_profile || '').trim().toLowerCase();
+        const code = String(payload?.country_code || '').trim().toUpperCase();
+        setCountryProfile(profile === 'outside_india' ? 'outside_india' : 'india');
+        if (code) setCountryCode(code);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCountryProfile('india');
+        setCountryCode('IN');
+      })
+      .finally(() => {
+        if (!cancelled) setGeoLoaded(true);
+      });
+
     return () => {
       cancelled = true;
     };
@@ -725,7 +765,7 @@ export default function InstantConsult() {
   };
 
   const startAutomaticPayment = async () => {
-    if (!idToken || paymentStarting || paymentMode === 'blocked') return;
+    if (!idToken || paymentStarting || paymentMode === 'blocked' || paymentMode === 'international_blocked') return;
 
     setPaymentStarting(true);
     setPaymentUnlocked(false);
@@ -741,7 +781,11 @@ export default function InstantConsult() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ payment_amount: INSTANT_FEE_AMOUNT }),
+        body: JSON.stringify({
+          payment_amount: INSTANT_FEE_AMOUNT,
+          country_profile: countryProfile,
+          country_code: countryCode,
+        }),
       });
       if (!res.ok) throw new Error(await parseApiError(res));
       const payload = await res.json();
@@ -870,6 +914,10 @@ export default function InstantConsult() {
     }
     if (paymentMode === 'auto' && !paymentSessionId) {
       setSendError('Payment session missing. Start a new payment session.');
+      return;
+    }
+    if (paymentMode === 'international_blocked') {
+      setSendError(paymentCapabilities?.international_notice || 'International checkout is currently disabled.');
       return;
     }
     if (paymentMode === 'blocked') {
@@ -1043,36 +1091,91 @@ export default function InstantConsult() {
 
                 <div className="mt-4 rounded-xl p-4" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Pay with Paytm</span>
-                    <span className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>{INSTANT_FEE_LABEL}</span>
+                    <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Payment region</span>
+                    <span className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>
+                      {countryProfile === 'outside_india' ? 'Disabled' : INSTANT_FEE_LABEL}
+                    </span>
                   </div>
-                  <div className="mt-3 flex justify-center">
-                    <div
-                      className="rounded-lg overflow-hidden w-full p-2"
-                      style={{
-                        border: '1px solid var(--border2)',
-                        background: '#fff',
-                        maxWidth: 'min(84vw, 320px)',
-                      }}
-                    >
-                      <img
-                        src={paymentQrSrc}
-                        alt="Instant consult Paytm QR"
-                        className="block w-full h-auto aspect-square object-contain"
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-3 flex justify-center">
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setQrModalOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] tracking-[0.18em] uppercase"
-                      style={{ border: '1px solid var(--border2)', color: 'var(--fg2)', background: 'var(--bg-elev)' }}
+                      onClick={() => setCountryProfile('india')}
+                      className="rounded-lg px-3 py-2 text-left"
+                      style={{
+                        border: countryProfile === 'india' ? '1px solid var(--accent)' : '1px solid var(--border2)',
+                        background: countryProfile === 'india' ? 'var(--accent-dim)' : 'transparent',
+                      }}
                     >
-                      <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.8} />
-                      Tap for full-size QR
+                      <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: 'var(--fg3)' }}>India</p>
+                      <p className="text-sm mt-1" style={{ color: 'var(--fg)' }}>UPI / Paytm QR</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCountryProfile('outside_india')}
+                      className="rounded-lg px-3 py-2 text-left"
+                      style={{
+                        border: countryProfile === 'outside_india' ? '1px solid var(--special-border)' : '1px solid var(--border2)',
+                        background: countryProfile === 'outside_india' ? 'var(--special-bg)' : 'transparent',
+                      }}
+                    >
+                      <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: 'var(--fg3)' }}>Outside India</p>
+                      <p className="text-sm mt-1" style={{ color: 'var(--fg)' }}>International rails</p>
                     </button>
                   </div>
+
+                  {geoLoaded && (
+                    <p className="mt-2 text-[11px]" style={{ color: 'var(--fg3)' }}>
+                      Auto-country: {countryCode || 'IN'} (manual override enabled)
+                    </p>
+                  )}
+
+                  {countryProfile === 'india' ? (
+                    <>
+                      <div className="mt-3 flex justify-center">
+                        <div
+                          className="rounded-lg overflow-hidden w-full p-2"
+                          style={{
+                            border: '1px solid var(--border2)',
+                            background: '#fff',
+                            maxWidth: 'min(84vw, 320px)',
+                          }}
+                        >
+                          <img
+                            src={paymentQrSrc}
+                            alt="Instant consult Paytm QR"
+                            className="block w-full h-auto aspect-square object-contain"
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-3 flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setQrModalOpen(true)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] tracking-[0.18em] uppercase"
+                          style={{ border: '1px solid var(--border2)', color: 'var(--fg2)', background: 'var(--bg-elev)' }}
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                          Tap for full-size QR
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mt-3 rounded-lg p-3" style={{ border: '1px solid var(--special-border)', background: 'var(--special-bg)' }}>
+                      <p className="text-xs" style={{ color: 'var(--special-accent)' }}>
+                        {paymentCapabilities?.international_notice || 'International checkout is currently disabled.'}
+                      </p>
+                      {Array.isArray(paymentCapabilities?.international_rails) && paymentCapabilities.international_rails.length > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                          {paymentCapabilities.international_rails.map((rail) => (
+                            <p key={rail.id || rail.name} className="text-[11px]" style={{ color: 'var(--fg2)' }}>
+                              {rail.name}: {rail.detail}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4">
@@ -1134,6 +1237,10 @@ export default function InstantConsult() {
                         </p>
                       )}
                     </>
+                  ) : paymentMode === 'international_blocked' ? (
+                    <p className="text-xs" style={{ color: 'var(--fg2)' }}>
+                      {paymentCapabilities?.international_notice || 'International checkout is currently disabled.'}
+                    </p>
                   ) : (
                     <p className="text-xs" style={{ color: 'var(--fg2)' }}>
                       Automatic payment confirmation is not configured. Please contact support to enable gateway webhooks.
