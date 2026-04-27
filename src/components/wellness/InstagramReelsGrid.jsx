@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Film, Image as ImageIcon, Layers, Instagram, ExternalLink } from 'lucide-react';
 import { apiUrl } from '@/utils';
 
 const FALLBACK_HANDLE = 'quantum_healingspace';
+const REELS_PER_VIEW = 4;
 
 function normalizeInstagramError(message) {
   const raw = String(message || '').trim();
@@ -53,8 +54,8 @@ function TypeBadge({ type, isCarousel }) {
   );
 }
 
-function ReelTile({ item, idx, uniform = false }) {
-  const aspect = uniform ? '4 / 5' : HEIGHT_PATTERN[idx % HEIGHT_PATTERN.length];
+function ReelTile({ item, idx, uniform = false, marquee = false }) {
+  const aspect = marquee ? '9 / 16' : uniform ? '4 / 5' : HEIGHT_PATTERN[idx % HEIGHT_PATTERN.length];
   const videoRef = useRef(null);
   const [hovered, setHovered] = useState(false);
 
@@ -75,13 +76,14 @@ function ReelTile({ item, idx, uniform = false }) {
       rel="noopener noreferrer"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      initial={{ opacity: 0, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-60px' }}
-      transition={{ duration: 0.7, delay: (idx % 4) * 0.05, ease: [0.22, 1, 0.36, 1] }}
+      initial={marquee ? false : { opacity: 0, y: 24 }}
+      whileInView={marquee ? undefined : { opacity: 1, y: 0 }}
+      viewport={marquee ? undefined : { once: true, margin: '-60px' }}
+      transition={marquee ? undefined : { duration: 0.7, delay: (idx % 4) * 0.05, ease: [0.22, 1, 0.36, 1] }}
       whileHover={uniform ? undefined : { y: -4 }}
       className="relative block w-full overflow-hidden group"
       style={{
+        width: marquee ? 'clamp(150px, 17vw, 340px)' : '100%',
         aspectRatio: aspect,
         background: 'var(--bg2)',
         border: '0',
@@ -142,12 +144,13 @@ function ReelTile({ item, idx, uniform = false }) {
   );
 }
 
-function PlaceholderTile({ idx, uniform = false }) {
-  const aspect = uniform ? '4 / 5' : HEIGHT_PATTERN[idx % HEIGHT_PATTERN.length];
+function PlaceholderTile({ idx, uniform = false, marquee = false }) {
+  const aspect = marquee ? '9 / 16' : uniform ? '4 / 5' : HEIGHT_PATTERN[idx % HEIGHT_PATTERN.length];
   return (
     <div
       className="relative w-full overflow-hidden animate-pulse"
       style={{
+        width: marquee ? 'clamp(150px, 17vw, 340px)' : '100%',
         aspectRatio: aspect,
         background: 'var(--bg2)',
         border: '0',
@@ -159,6 +162,8 @@ function PlaceholderTile({ idx, uniform = false }) {
 export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
+  const [activeWindow, setActiveWindow] = useState(0);
+  const carouselRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,10 +186,47 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Distribute items into 2 columns: alternating index for nicer brick offset
   const tiles = items || Array.from({ length: 8 }).map((_, i) => ({ _placeholder: true, _i: i }));
-  const columnA = tiles.filter((_, i) => i % 2 === 0);
-  const columnB = tiles.filter((_, i) => i % 2 === 1);
+  const windowCount = Math.max(1, tiles.length - REELS_PER_VIEW + 1);
+
+  const scrollToWindow = useCallback((index) => {
+    const el = carouselRef.current;
+    if (!el) return;
+    const clampedIndex = Math.max(0, Math.min(windowCount - 1, index));
+    const itemWidth = el.clientWidth / REELS_PER_VIEW || 1;
+    el.scrollTo({ left: clampedIndex * itemWidth, behavior: 'smooth' });
+    setActiveWindow(clampedIndex);
+  }, [windowCount]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const el = carouselRef.current;
+    if (!el) return undefined;
+
+    let raf = 0;
+    const updateActiveWindow = () => {
+      const itemWidth = el.clientWidth / REELS_PER_VIEW || 1;
+      const nextWindow = Math.round(el.scrollLeft / itemWidth);
+      const clamped = Math.max(0, Math.min(windowCount - 1, nextWindow));
+      setActiveWindow((prev) => (prev === clamped ? prev : clamped));
+    };
+
+    const onScroll = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(updateActiveWindow);
+    };
+
+    const onResize = () => updateActiveWindow();
+    updateActiveWindow();
+
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onResize);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [windowCount]);
 
   return (
     <section
@@ -258,36 +300,56 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-0 items-start lg:hidden">
-              <div className="flex flex-col gap-0">
-                {columnA.map((it, i) =>
-                  it._placeholder ? (
-                    <PlaceholderTile key={`a-ph-${it._i}`} idx={it._i} />
-                  ) : (
-                    <ReelTile key={it.id || `a-${i}`} item={it} idx={i * 2} />
-                  )
-                )}
-              </div>
-              <div className="flex flex-col gap-0">
-                {columnB.map((it, i) =>
-                  it._placeholder ? (
-                    <PlaceholderTile key={`b-ph-${it._i}`} idx={it._i} />
-                  ) : (
-                    <ReelTile key={it.id || `b-${i}`} item={it} idx={i * 2 + 1} />
-                  )
-                )}
+            <div
+              ref={carouselRef}
+              className="hide-scrollbar relative left-1/2 w-screen -translate-x-1/2 overflow-x-auto overflow-y-hidden snap-x snap-mandatory pb-1"
+            >
+              <div className="flex items-stretch gap-0 w-max min-w-full">
+                {tiles.slice(0, 8).map((it, i) => {
+                  const key = it._placeholder ? `row-ph-${it._i}` : (it.id || `row-${i}`);
+                  return (
+                    <div
+                      key={key}
+                      className="shrink-0 snap-start"
+                      style={{ width: '25vw', flexBasis: '25vw' }}
+                    >
+                      {it._placeholder ? (
+                        <PlaceholderTile idx={it._i} uniform />
+                      ) : (
+                        <ReelTile item={it} idx={i} uniform />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-
-            <div className="hidden lg:grid lg:grid-cols-8 gap-0 items-stretch">
-              {tiles.slice(0, 8).map((it, i) =>
-                it._placeholder ? (
-                  <PlaceholderTile key={`lg-ph-${it._i}`} idx={it._i} uniform />
-                ) : (
-                  <ReelTile key={it.id || `lg-${i}`} item={it} idx={i} uniform />
-                )
-              )}
-            </div>
+            {windowCount > 1 && (
+              <div className="mt-5 flex justify-center">
+                <div
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-2"
+                  style={{ border: '1px solid var(--border2)', background: 'var(--bg2)' }}
+                >
+                  {Array.from({ length: windowCount }).map((_, idx) => {
+                    const active = idx === activeWindow;
+                    return (
+                      <button
+                        key={`reel-window-${idx}`}
+                        type="button"
+                        onClick={() => scrollToWindow(idx)}
+                        className="rounded-full transition-all duration-300"
+                        aria-label={`Go to reels window ${idx + 1} of ${windowCount}`}
+                        aria-current={active ? 'true' : undefined}
+                        style={{
+                          width: active ? '26px' : '8px',
+                          height: '8px',
+                          background: active ? 'var(--accent-text)' : 'var(--border2)',
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

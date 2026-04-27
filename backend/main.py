@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import csv
 import asyncio
+import html
 import hashlib
 import hmac
 import io
@@ -40,7 +41,7 @@ import secrets
 import smtplib
 import ssl
 import time
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -76,8 +77,11 @@ for env_path in (PROJECT_ROOT / ".env", PROJECT_ROOT / "backend" / ".env"):
 
 ADMIN_ALERT_EMAIL = "vartikashukla2000@yahoo.com"
 INSTANT_CONSULT_FEE_INR = 1500
+BOOKING_CONSULT_FEE_INR = 2500
 MAX_CONSULT_REPLY_IMAGES = 10
 MAX_CONSULT_REPLY_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_CONSULT_REPLY_EMAIL_INLINE_IMAGES = 4
+MAX_CONSULT_REPLY_EMAIL_INLINE_IMAGE_BYTES = 2 * 1024 * 1024
 ALLOWED_CONSULT_REPLY_IMAGE_TYPES = {
     "image/jpeg",
     "image/png",
@@ -87,11 +91,20 @@ ALLOWED_CONSULT_REPLY_IMAGE_TYPES = {
 
 CONSULT_STATUS_VALUES: tuple[str, ...] = ("new", "inprogress", "done")
 PAYMENT_CLAIM_STATUS_VALUES: tuple[str, ...] = ("pending", "approved", "rejected", "consumed")
+PAYMENT_SESSION_STATUS_VALUES: tuple[str, ...] = (
+    "created",
+    "awaiting_payment",
+    "paid",
+    "consumed",
+    "failed",
+    "expired",
+)
+PAYMENT_SESSION_TTL_MINUTES = max(5, min(int(os.environ.get("INSTANT_PAYMENT_SESSION_TTL_MINUTES", "30")), 180))
 
 CONSULT_TYPES: list[dict[str, Any]] = [
     {
-        "id": "grabovoy-codes",
-        "label": "Grabovoy Codes",
+        "id": "grabovoi-codes",
+        "label": "Grabovoi Codes",
         "description": "Numeric sequence guidance for healing intentions, restoration targets, and manifestation alignment.",
         "accent": "#3E63AE",
         "images": [
@@ -102,6 +115,22 @@ CONSULT_TYPES: list[dict[str, Any]] = [
             {
                 "place": "Focused Number Meditation",
                 "src": "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&q=85",
+            },
+        ],
+    },
+    {
+        "id": "zibu",
+        "label": "Zibu Chat",
+        "description": "Real-time Zibu chat for immediate guidance, messages, and intuitive updates.",
+        "accent": "#00C2FF",
+        "images": [
+            {
+                "place": "Live Chat Panel",
+                "src": "https://images.unsplash.com/photo-1516280440614-6697286d5d10?w=1200&q=85",
+            },
+            {
+                "place": "Message Flow",
+                "src": "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1200&q=85",
             },
         ],
     },
@@ -185,16 +214,30 @@ CONSULT_TYPES: list[dict[str, Any]] = [
             },
         ],
     },
+    {
+        "id": "recommended-best-practice",
+        "label": "Recommended Best Practice",
+        "description": "Auto-routed consultation stream using our recommended best-practice guidance workflow.",
+        "accent": "#C6873A",
+        "images": [],
+    },
 ]
 
 CONSULT_TYPE_IDS = {item["id"] for item in CONSULT_TYPES}
+LEGACY_CONSULT_TYPE_TO_MODERN: dict[str, str] = {
+    "grabovoy-codes": "grabovoi-codes",
+    "healing-messages": "zibu",
+    "relationship-clarity": "angel-cards",
+    "health-energy": "dowsing",
+}
 
 STATIC_QR_OVERRIDES: dict[Decimal, Path] = {
-    Decimal("2500"): PROJECT_ROOT / "attached_assets" / "qr-codes" / "inr-2500-paytm.jpg",
-    Decimal("1500"): PROJECT_ROOT / "attached_assets" / "qr-codes" / "inr-1500-paytm.jpg",
+    Decimal(str(BOOKING_CONSULT_FEE_INR)): PROJECT_ROOT / "attached_assets" / "qr-codes" / "inr-2500-paytm.jpg",
+    Decimal(str(INSTANT_CONSULT_FEE_INR)): PROJECT_ROOT / "attached_assets" / "qr-codes" / "inr-1500-paytm.jpg",
 }
 
 _dynamic_qr_cache: dict[str, bytes] = {}
+_signed_url_cache: dict[str, tuple[str, float]] = {}
 _instagram_warning_task: asyncio.Task | None = None
 _storage_bucket = None
 
@@ -390,6 +433,23 @@ def _issue_token() -> dict[str, Any]:
     return {"token": token, "expires_at": issued_at + ADMIN_TOKEN_TTL}
 
 
+def _instant_payment_provider() -> str:
+    return (os.environ.get("INSTANT_PAYMENT_PROVIDER") or "paytm").strip().lower() or "paytm"
+
+
+def _instant_payment_webhook_secret() -> str | None:
+    secret = (os.environ.get("INSTANT_PAYMENT_WEBHOOK_SECRET") or "").strip()
+    return secret or None
+
+
+def _instant_payment_automation_enabled() -> bool:
+    return bool(_instant_payment_webhook_secret())
+
+
+def _instant_manual_payment_claim_enabled() -> bool:
+    return False
+
+
 def require_admin(authorization: str | None = Header(default=None)) -> bool:
     if not _admin_password():
         raise HTTPException(503, "Admin is not configured: set ADMIN_PASSWORD secret.")
@@ -419,6 +479,10 @@ def require_client(authorization: str | None = Header(default=None)) -> dict[str
     email = (decoded.get("email") or "").strip().lower()
     if not email:
         raise HTTPException(400, "Authenticated profile must include an email")
+
+    if not bool(decoded.get("email_verified")):
+        raise HTTPException(403, "Please verify your email before using Instant Consult")
+
     return decoded
 
 
@@ -446,6 +510,22 @@ def _normalize_consult_status(raw_status: str | None) -> str:
     if status not in CONSULT_STATUS_VALUES:
         raise HTTPException(400, "Invalid status")
     return status
+
+
+def _normalize_consult_type_id(raw_type_id: str | None) -> str:
+    type_id = str(raw_type_id or "").strip().lower()
+    if type_id not in CONSULT_TYPE_IDS:
+        raise HTTPException(400, "Invalid consult type")
+    return type_id
+
+
+def _resolve_consult_thread_type_id(raw_type_id: str | None) -> str | None:
+    type_id = str(raw_type_id or "").strip().lower()
+    if not type_id:
+        return None
+    if type_id in CONSULT_TYPE_IDS:
+        return type_id
+    return LEGACY_CONSULT_TYPE_TO_MODERN.get(type_id)
 
 
 def _normalize_payment_claim_status(raw_status: str | None) -> str:
@@ -483,10 +563,52 @@ def _serialize_payment_claim(doc: Any) -> dict[str, Any]:
     }
 
 
-def _clean_machine_value(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value).replace("\r", " ").replace("\n", "\\n").strip()
+def _normalize_payment_session_status(raw_status: str | None) -> str:
+    status = (raw_status or "").strip().lower()
+    if status not in PAYMENT_SESSION_STATUS_VALUES:
+        raise HTTPException(400, "Invalid payment session status")
+    return status
+
+
+def _serialize_payment_session(doc: Any) -> dict[str, Any]:
+    data = doc.to_dict() or {}
+    return {
+        "id": doc.id,
+        "uid": data.get("uid"),
+        "email": data.get("email"),
+        "display_name": data.get("display_name"),
+        "provider": data.get("provider") or _instant_payment_provider(),
+        "status": data.get("status") or "created",
+        "amount": int(data.get("amount") or INSTANT_CONSULT_FEE_INR),
+        "currency": data.get("currency") or "INR",
+        "payment_reference": data.get("payment_reference") or None,
+        "provider_payment_id": data.get("provider_payment_id") or None,
+        "provider_event_id": data.get("provider_event_id") or None,
+        "created_at": _iso_value(data.get("created_at")),
+        "updated_at": _iso_value(data.get("updated_at")),
+        "expires_at": _iso_value(data.get("expires_at")),
+        "paid_at": _iso_value(data.get("paid_at")),
+        "consumed_for_message_id": data.get("consumed_for_message_id") or None,
+        "failure_reason": data.get("failure_reason") or None,
+    }
+
+
+def _is_payment_session_expired(session_data: dict[str, Any]) -> bool:
+    expires_at = session_data.get("expires_at")
+    if not expires_at:
+        return False
+    if isinstance(expires_at, datetime):
+        expiry = expires_at
+    elif hasattr(expires_at, "to_datetime"):
+        try:
+            expiry = expires_at.to_datetime()
+        except Exception:
+            return False
+    else:
+        return False
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    return expiry <= datetime.now(timezone.utc)
 
 
 def _safe_storage_name(name: str) -> str:
@@ -519,9 +641,17 @@ def _guess_extension(upload: UploadFile) -> str:
 def _signed_url_for_storage_path(path: str) -> str | None:
     if not path:
         return None
+
+    now_epoch = time.time()
+    cached = _signed_url_cache.get(path)
+    if cached and cached[1] > now_epoch:
+        return cached[0]
+
     try:
         blob = get_storage_bucket().blob(path)
-        return blob.generate_signed_url(version="v4", expiration=timedelta(days=14), method="GET")
+        signed_url = blob.generate_signed_url(version="v4", expiration=timedelta(days=14), method="GET")
+        _signed_url_cache[path] = (signed_url, now_epoch + 6 * 60 * 60)
+        return signed_url
     except Exception as exc:
         log.warning("Unable to generate signed URL for %s: %s", path, exc)
         return None
@@ -591,35 +721,207 @@ def _serialize_reply_images(images: list[dict[str, Any]]) -> list[dict[str, Any]
     return rows
 
 
-def _build_consult_reply_client_email(message_data: dict[str, Any]) -> str:
+def _email_image_content_type(raw_content_type: str | None, name: str | None = None) -> str:
+    content_type = str(raw_content_type or "").split(";", 1)[0].strip().lower()
+    if content_type in ALLOWED_CONSULT_REPLY_IMAGE_TYPES:
+        return content_type
+
+    suffix = Path(str(name or "")).suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".png":
+        return "image/png"
+    if suffix == ".webp":
+        return "image/webp"
+    if suffix == ".gif":
+        return "image/gif"
+    return "image/jpeg"
+
+
+def _reply_image_bytes_for_email(image: dict[str, Any]) -> tuple[bytes, str] | None:
+    path = str(image.get("path") or "").strip()
+    if not path:
+        return None
+
+    content_type = _email_image_content_type(image.get("content_type"), image.get("name"))
+    try:
+        blob = get_storage_bucket().blob(path)
+        raw = blob.download_as_bytes()
+        content_type = _email_image_content_type(blob.content_type, image.get("name"))
+    except Exception as exc:
+        log.warning("Unable to load consult reply image for inline email %s: %s", path, exc)
+        return None
+
+    if not raw:
+        return None
+
+    if len(raw) > MAX_CONSULT_REPLY_EMAIL_INLINE_IMAGE_BYTES:
+        log.info(
+            "Skipping inline email image %s because size %s exceeds %s",
+            path,
+            len(raw),
+            MAX_CONSULT_REPLY_EMAIL_INLINE_IMAGE_BYTES,
+        )
+        return None
+
+    return raw, content_type
+
+
+def _build_consult_reply_client_email(message_data: dict[str, Any]) -> dict[str, Any]:
     reply = (message_data.get("admin_reply") or {}) if isinstance(message_data.get("admin_reply"), dict) else {}
     reply_text = (reply.get("text") or "").strip()
-    images = reply.get("images") or []
-    image_lines = "\n".join([f"- {img.get('url') or img.get('path') or ''}" for img in images]) or "- None"
+    images = [img for img in (reply.get("images") or []) if isinstance(img, dict)]
 
-    kv_lines = [
-        f"QHS_IC_MESSAGE_ID={_clean_machine_value(message_data.get('id'))}",
-        f"QHS_IC_EMAIL={_clean_machine_value(message_data.get('email'))}",
-        f"QHS_IC_TYPE_ID={_clean_machine_value(message_data.get('type_id'))}",
-        f"QHS_IC_TYPE_LABEL={_clean_machine_value(message_data.get('type_label'))}",
-        f"QHS_IC_STATUS={_clean_machine_value(message_data.get('status'))}",
-        f"QHS_IC_REPLY_AT={_clean_machine_value(reply.get('replied_at'))}",
-        f"QHS_IC_REPLY_TEXT={_clean_machine_value(reply_text)}",
-        f"QHS_IC_REPLY_IMAGE_COUNT={len(images)}",
-    ]
-    for i, img in enumerate(images, start=1):
-        kv_lines.append(f"QHS_IC_REPLY_IMAGE_{i}={_clean_machine_value(img.get('url') or img.get('path'))}")
+    type_label = str(message_data.get("type_label") or message_data.get("type_id") or "Instant Consult")
+    ref_id = str(message_data.get("id") or "").strip() or "N/A"
+    replied_at = _iso_value(reply.get("replied_at")) or _iso_value(message_data.get("updated_at")) or "Just now"
 
-    return (
+    reply_text_html = html.escape(reply_text or "(No text provided)").replace("\n", "<br>")
+    ref_id_html = html.escape(ref_id)
+    type_label_html = html.escape(type_label)
+    replied_at_html = html.escape(replied_at)
+
+    inline_images: list[dict[str, Any]] = []
+    text_image_lines: list[str] = []
+    image_blocks: list[str] = []
+    ref_slug = re.sub(r"[^a-z0-9-]+", "-", ref_id.lower()).strip("-") or "reply"
+
+    for idx, image in enumerate(images, start=1):
+        image_name = str(image.get("name") or f"Supporting image {idx}").strip() or f"Supporting image {idx}"
+        image_name_html = html.escape(image_name)
+        image_url = str(image.get("url") or "").strip()
+        image_url_html = html.escape(image_url)
+
+        embed_cid = ""
+        if len(inline_images) < MAX_CONSULT_REPLY_EMAIL_INLINE_IMAGES:
+            loaded = _reply_image_bytes_for_email(image)
+            if loaded:
+                raw, content_type = loaded
+                subtype = content_type.split("/", 1)[1] if "/" in content_type else "jpeg"
+                subtype = subtype.split(";", 1)[0].strip().lower() or "jpeg"
+                embed_cid = f"qhs-consult-{ref_slug}-{idx}-{secrets.token_hex(4)}"
+                safe_name = _safe_storage_name(image_name)
+                if "." not in safe_name:
+                    safe_name = f"{safe_name}.{subtype}"
+                inline_images.append(
+                    {
+                        "cid": embed_cid,
+                        "content_type": content_type,
+                        "name": safe_name,
+                        "data": raw,
+                    }
+                )
+
+        if embed_cid:
+            media_markup = (
+                f'<img src="cid:{embed_cid}" alt="{image_name_html}" width="560" '
+                'style="display:block;width:100%;max-width:560px;height:auto;border:0;outline:none;text-decoration:none;border-radius:10px;" />'
+            )
+        elif image_url:
+            media_markup = (
+                f'<a href="{image_url_html}" style="color:#1f4f9a;text-decoration:underline;">'
+                f"Open supporting image {idx}</a>"
+            )
+        else:
+            media_markup = '<span style="color:#6c7789;">Supporting image unavailable.</span>'
+
+        fallback_markup = ""
+        if image_url:
+            fallback_markup = (
+                '<p style="margin:8px 0 0 0;font-size:12px;line-height:18px;color:#5b6578;">'
+                f'If the image does not render, <a href="{image_url_html}" style="color:#1f4f9a;text-decoration:underline;">open it here</a>.'
+                '</p>'
+            )
+
+        image_blocks.append(
+            '<tr><td style="padding:0 0 18px 0;">'
+            f'<p style="margin:0 0 8px 0;font-size:12px;line-height:18px;color:#6c7789;">Supporting image {idx}</p>'
+            f"{media_markup}"
+            f"{fallback_markup}"
+            "</td></tr>"
+        )
+
+        text_image_line = f"{idx}. {image_name}"
+        if image_url:
+            text_image_line = f"{text_image_line} - {image_url}"
+        elif embed_cid:
+            text_image_line = f"{text_image_line} - embedded in this email"
+        else:
+            text_image_line = f"{text_image_line} - unavailable"
+        text_image_lines.append(text_image_line)
+
+    text_image_block = "\n".join(text_image_lines) if text_image_lines else "No supporting images were attached."
+    image_section_html = ""
+    if image_blocks:
+        image_section_html = (
+            '<tr><td style="padding:0 32px 28px 32px;">'
+            '<p style="margin:0 0 12px 0;font-size:13px;line-height:20px;color:#26334a;font-weight:600;">Supporting Images</p>'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
+            f"{''.join(image_blocks)}"
+            "</table></td></tr>"
+        )
+
+    text_body = (
         "Namaste from Quantum Healing Space,\n\n"
         "Your Instant Consult response is ready.\n\n"
-        "Response text:\n"
+        f"Reference ID: {ref_id}\n"
+        f"Consult type: {type_label}\n"
+        f"Responded at: {replied_at}\n\n"
+        "Response:\n"
         f"{reply_text or '(No text provided)'}\n\n"
-        "Attached supporting image links:\n"
-        f"{image_lines}\n\n"
-        "Machine-readable block:\n"
-        f"{'\n'.join(kv_lines)}\n"
+        "Supporting images:\n"
+        f"{text_image_block}\n\n"
+        "Warmly,\n"
+        "Quantum Healing Space"
     )
+
+    html_body = f"""<!doctype html>
+<html lang=\"en\">
+  <body style=\"margin:0;padding:0;background:#f2f4f8;\">
+    <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background:#f2f4f8;padding:20px 0;\">
+      <tr>
+        <td align=\"center\">
+          <table role=\"presentation\" width=\"640\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"width:100%;max-width:640px;background:#ffffff;border:1px solid #dbe1ea;border-radius:14px;overflow:hidden;\">
+            <tr>
+              <td style=\"padding:28px 32px 20px 32px;background:#f8fafc;border-bottom:1px solid #e5ebf2;\">
+                <p style=\"margin:0;font-size:21px;line-height:30px;color:#1b2436;font-weight:600;\">Your Instant Consult response is ready</p>
+                <p style=\"margin:10px 0 0 0;font-size:13px;line-height:20px;color:#546074;\">Namaste from Quantum Healing Space</p>
+              </td>
+            </tr>
+            <tr>
+              <td style=\"padding:20px 32px 10px 32px;\">
+                <p style=\"margin:0;font-size:13px;line-height:20px;color:#5a667a;\"><strong style=\"color:#2a364d;\">Reference ID:</strong> {ref_id_html}</p>
+                <p style=\"margin:6px 0 0 0;font-size:13px;line-height:20px;color:#5a667a;\"><strong style=\"color:#2a364d;\">Consult type:</strong> {type_label_html}</p>
+                <p style=\"margin:6px 0 0 0;font-size:13px;line-height:20px;color:#5a667a;\"><strong style=\"color:#2a364d;\">Responded at:</strong> {replied_at_html}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style=\"padding:16px 32px 18px 32px;\">
+                <div style=\"border:1px solid #dfe6f0;border-radius:10px;background:#f9fbff;padding:16px 18px;\">
+                  <p style=\"margin:0 0 8px 0;font-size:12px;line-height:18px;color:#6c7789;text-transform:uppercase;letter-spacing:0.12em;\">Response</p>
+                  <p style=\"margin:0;font-size:15px;line-height:24px;color:#1f2a3f;\">{reply_text_html}</p>
+                </div>
+              </td>
+            </tr>
+            {image_section_html}
+            <tr>
+              <td style=\"padding:4px 32px 26px 32px;\">
+                <p style=\"margin:0;font-size:12px;line-height:19px;color:#647086;\">If you need a follow-up, reply with your reference ID.</p>
+                <p style=\"margin:10px 0 0 0;font-size:12px;line-height:19px;color:#647086;\">Warmly,<br>Quantum Healing Space</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"""
+
+    return {
+        "text": text_body,
+        "html": html_body,
+        "inline_images": inline_images,
+    }
 
 
 def _send_consult_reply_email(message_data: dict[str, Any]) -> bool:
@@ -627,7 +929,14 @@ def _send_consult_reply_email(message_data: dict[str, Any]) -> bool:
     if not to_email:
         return False
     subject = f"[QHS] Your Instant Consult response - {message_data.get('type_label') or message_data.get('type_id') or 'Update'}"
-    return _send_email([to_email], subject, _build_consult_reply_client_email(message_data))
+    payload = _build_consult_reply_client_email(message_data)
+    return _send_email(
+        [to_email],
+        subject,
+        payload["text"],
+        html_body=payload["html"],
+        inline_images=payload["inline_images"],
+    )
 
 
 def _smtp_settings() -> dict[str, Any]:
@@ -640,7 +949,14 @@ def _smtp_settings() -> dict[str, Any]:
     }
 
 
-def _send_email(to_addrs: list[str], subject: str, text_body: str) -> bool:
+def _send_email(
+    to_addrs: list[str],
+    subject: str,
+    text_body: str,
+    *,
+    html_body: str | None = None,
+    inline_images: list[dict[str, Any]] | None = None,
+) -> bool:
     settings = _smtp_settings()
     if not settings["host"] or not settings["username"] or not settings["password"]:
         log.warning("SMTP is not configured; skipping email '%s'", subject)
@@ -654,7 +970,35 @@ def _send_email(to_addrs: list[str], subject: str, text_body: str) -> bool:
     msg["Subject"] = subject
     msg["From"] = settings["from_addr"]
     msg["To"] = ", ".join(recipients)
-    msg.set_content(text_body)
+    msg.set_content(text_body or "")
+
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
+        html_part = msg.get_payload()[-1]
+        for image in inline_images or []:
+            raw = image.get("data")
+            if not isinstance(raw, (bytes, bytearray)):
+                continue
+
+            content_type = str(image.get("content_type") or "").split(";", 1)[0].strip().lower()
+            if not content_type.startswith("image/"):
+                continue
+
+            subtype = content_type.split("/", 1)[1] if "/" in content_type else "jpeg"
+            subtype = subtype.strip().lower() or "jpeg"
+            cid = str(image.get("cid") or "").strip() or f"qhs-inline-{secrets.token_hex(8)}"
+            filename = _safe_storage_name(str(image.get("name") or f"image-{cid}.{subtype}"))
+
+            try:
+                html_part.add_related(
+                    bytes(raw),
+                    maintype="image",
+                    subtype=subtype,
+                    cid=f"<{cid}>",
+                    filename=filename,
+                )
+            except Exception as exc:
+                log.warning("Unable to attach inline email image %s: %s", filename, exc)
 
     try:
         if settings["port"] == 465:
@@ -768,9 +1112,20 @@ def _format_amount_for_upi(amount: Decimal) -> str:
     return text
 
 
-def _upi_intent_for_amount(amount: Decimal) -> str:
+def _upi_intent_for_amount(amount: Decimal, payment_ref: str | None = None) -> str:
     amount_text = _format_amount_for_upi(amount)
-    return f"upi://pay?pa=9819962635@ptyes&pn={quote('VARTIKA SHUKLA')}&am={amount_text}"
+    parts = [
+        "upi://pay",
+        f"pa={quote('9819962635@ptyes')}",
+        f"pn={quote('VARTIKA SHUKLA')}",
+        f"am={quote(amount_text)}",
+    ]
+    if payment_ref:
+        safe_ref = re.sub(r"[^A-Za-z0-9_-]", "", payment_ref)[:40]
+        if safe_ref:
+            parts.append(f"tr={quote(safe_ref)}")
+            parts.append(f"tn={quote(f'QHS-{safe_ref}')}")
+    return "?".join([parts[0], "&".join(parts[1:])])
 
 
 def _generate_qr_png(data: str) -> bytes:
@@ -944,8 +1299,9 @@ async def newsletter_subscribe(body: NewsletterSubscribeRequest) -> dict[str, An
 class InstantConsultCreateRequest(BaseModel):
     type_id: str = Field(min_length=3, max_length=64)
     question: str = Field(min_length=8, max_length=4000)
-    payment_reference: str = Field(min_length=3, max_length=120)
-    payment_claim_id: str = Field(min_length=6, max_length=128)
+    payment_reference: str | None = Field(default=None, min_length=3, max_length=120)
+    payment_claim_id: str | None = Field(default=None, min_length=6, max_length=128)
+    payment_session_id: str | None = Field(default=None, min_length=8, max_length=128)
     payment_amount: int = Field(default=INSTANT_CONSULT_FEE_INR, ge=1, le=500000)
 
 
@@ -963,8 +1319,24 @@ class InstantConsultPaymentClaimStatusRequest(BaseModel):
     note: str | None = Field(default=None, max_length=300)
 
 
+class InstantConsultPaymentSessionRequest(BaseModel):
+    payment_amount: int = Field(default=INSTANT_CONSULT_FEE_INR, ge=1, le=500000)
+
+
+class InstantConsultPaymentWebhookRequest(BaseModel):
+    session_id: str = Field(min_length=8, max_length=128)
+    status: str = Field(min_length=3, max_length=32)
+    amount: int = Field(ge=1, le=500000)
+    payment_reference: str | None = Field(default=None, max_length=120)
+    provider_payment_id: str | None = Field(default=None, max_length=140)
+    provider_event_id: str | None = Field(default=None, max_length=140)
+    failure_reason: str | None = Field(default=None, max_length=240)
+
+
 def _serialize_consult_message(doc: Any) -> dict[str, Any]:
     data = doc.to_dict() or {}
+    thread_type_raw = str(data.get("thread_type_id") or "").strip().lower()
+    thread_type_id = _resolve_consult_thread_type_id(thread_type_raw) or _resolve_consult_thread_type_id(data.get("type_id"))
     reply_raw = data.get("admin_reply") if isinstance(data.get("admin_reply"), dict) else None
     admin_reply = None
     if reply_raw:
@@ -983,6 +1355,7 @@ def _serialize_consult_message(doc: Any) -> dict[str, Any]:
         "email": data.get("email"),
         "display_name": data.get("display_name"),
         "type_id": data.get("type_id"),
+        "thread_type_id": thread_type_id,
         "type_label": data.get("type_label"),
         "question": data.get("question"),
         "status": data.get("status") or "new",
@@ -990,7 +1363,8 @@ def _serialize_consult_message(doc: Any) -> dict[str, Any]:
         "payment_currency": data.get("payment_currency") or "INR",
         "payment_reference": data.get("payment_reference"),
         "payment_claim_id": data.get("payment_claim_id") or None,
-        "payment_verified": bool(data.get("payment_claim_id")),
+        "payment_session_id": data.get("payment_session_id") or None,
+        "payment_verified": bool(data.get("payment_claim_id") or data.get("payment_session_id")),
         "created_at": _iso_value(data.get("created_at")),
         "updated_at": _iso_value(data.get("updated_at")),
         "admin_reply": admin_reply,
@@ -1019,6 +1393,7 @@ def _instant_consult_admin_email(message_data: dict[str, Any]) -> str:
         f"QHS_IC_PAYMENT_AMOUNT={message_data.get('payment_amount')}\n"
         f"QHS_IC_PAYMENT_CURRENCY={message_data.get('payment_currency')}\n"
         f"QHS_IC_PAYMENT_REFERENCE={message_data.get('payment_reference')}\n"
+        f"QHS_IC_PAYMENT_SESSION_ID={message_data.get('payment_session_id') or ''}\n"
         f"QHS_IC_CREATED_AT={message_data.get('created_at')}\n"
     )
 
@@ -1033,6 +1408,7 @@ def _instant_consult_client_email(message_data: dict[str, Any]) -> str:
         f"Message ID: {message_data.get('id')}\n"
         f"Payment: INR {message_data.get('payment_amount')}\n"
         f"Payment reference: {message_data.get('payment_reference')}\n"
+        f"Payment session: {message_data.get('payment_session_id') or 'N/A'}\n"
         f"Current status: {message_data.get('status')}\n\n"
         "Warmly,\n"
         "Quantum Healing Space"
@@ -1058,25 +1434,52 @@ async def consult_types() -> dict[str, Any]:
 
 
 @app.get("/api/consult/my-messages")
-async def consult_my_messages(limit: int = 50, identity: dict[str, Any] = Depends(require_client)) -> dict[str, Any]:
+async def consult_my_messages(
+    limit: int = 50,
+    type_id: str | None = None,
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
     db = get_firestore()
     uid = str(identity.get("uid"))
     safe_limit = max(1, min(limit, 200))
+    scoped_type_id = _normalize_consult_type_id(type_id) if type_id else None
+    fetch_limit = safe_limit if not scoped_type_id else min(500, max(safe_limit, safe_limit * 6))
 
     query = db.collection("instant_consult_messages").where("uid", "==", uid)
     try:
-        docs = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(safe_limit).stream()
+        docs = list(query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(fetch_limit).stream())
     except Exception:
-        docs = query.limit(safe_limit).stream()
+        docs = list(query.limit(fetch_limit).stream())
 
     rows = [_serialize_consult_message(d) for d in docs]
+    if scoped_type_id:
+        rows = [row for row in rows if row.get("thread_type_id") == scoped_type_id]
     rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    rows = rows[:safe_limit]
     return {"data": rows, "count": len(rows)}
 
 
-@app.post("/api/consult/payments/claim")
-async def consult_claim_payment(
-    body: InstantConsultPaymentClaimRequest,
+@app.get("/api/consult/payments/capabilities")
+async def consult_payment_capabilities(identity: dict[str, Any] = Depends(require_client)) -> dict[str, Any]:
+    _ = identity
+    automation_enabled = _instant_payment_automation_enabled()
+    return {
+        "provider": _instant_payment_provider(),
+        "automation_enabled": automation_enabled,
+        "manual_claim_enabled": _instant_manual_payment_claim_enabled(),
+        "session_ttl_minutes": PAYMENT_SESSION_TTL_MINUTES,
+        "fee_inr": INSTANT_CONSULT_FEE_INR,
+        "client_notice": (
+            "Payments unlock automatically after provider confirmation."
+            if automation_enabled
+            else "Automatic payment confirmation is not configured yet."
+        ),
+    }
+
+
+@app.post("/api/consult/payments/session")
+async def consult_create_payment_session(
+    body: InstantConsultPaymentSessionRequest,
     identity: dict[str, Any] = Depends(require_client),
 ) -> dict[str, Any]:
     if body.payment_amount != INSTANT_CONSULT_FEE_INR:
@@ -1090,58 +1493,143 @@ async def consult_claim_payment(
         or (email.split("@", 1)[0] if email else "Client")
     )
 
-    payment_reference = _normalize_payment_reference(body.payment_reference)
-    claim_id = hashlib.sha256(f"{uid}:{payment_reference}".encode("utf-8")).hexdigest()[:40]
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=PAYMENT_SESSION_TTL_MINUTES)
+    session_id = f"icpay_{secrets.token_hex(10)}"
 
-    db = get_firestore()
-    claim_ref = db.collection("instant_consult_payment_claims").document(claim_id)
-    existing = claim_ref.get()
-    existing_data = existing.to_dict() if existing.exists else {}
-    existing_status = (existing_data.get("status") or "").strip().lower()
-
-    if existing_status == "consumed":
-        raise HTTPException(409, "This payment reference has already been used.")
-
-    query = db.collection("instant_consult_payment_claims").where("payment_reference", "==", payment_reference).limit(20).stream()
-    for other_claim in query:
-        other_data = other_claim.to_dict() or {}
-        if str(other_data.get("uid") or "") == uid:
-            continue
-        other_status = (other_data.get("status") or "").strip().lower()
-        if other_status in {"pending", "approved", "consumed"}:
-            raise HTTPException(409, "This payment reference is already in use.")
-
-    next_status = existing_status if existing_status in {"approved", "consumed"} else "pending"
-    patch: dict[str, Any] = {
+    payload: dict[str, Any] = {
         "uid": uid,
         "email": email,
         "display_name": display_name,
-        "payment_reference": payment_reference,
-        "payment_amount": INSTANT_CONSULT_FEE_INR,
-        "payment_currency": "INR",
-        "status": next_status,
+        "provider": _instant_payment_provider(),
+        "status": "awaiting_payment",
+        "amount": INSTANT_CONSULT_FEE_INR,
+        "currency": "INR",
+        "created_at": firestore.SERVER_TIMESTAMP,
         "updated_at": firestore.SERVER_TIMESTAMP,
+        "expires_at": expires_at,
     }
-    if not existing.exists:
-        patch["created_at"] = firestore.SERVER_TIMESTAMP
-    if next_status == "pending":
-        patch["note"] = ""
-        patch["reviewed_by"] = None
-        patch["reviewed_at"] = None
 
-    claim_ref.set(patch, merge=True)
-    claim_doc = claim_ref.get()
-    serialized = _serialize_payment_claim(claim_doc)
+    ref = get_firestore().collection("instant_consult_payment_sessions").document(session_id)
+    ref.set(payload, merge=True)
+    snap = ref.get()
+    session = _serialize_payment_session(snap)
+    qr_src = f"/api/payments/upi-qr/instant-consult?tr={session_id}"
+
     return {
         "ok": True,
-        "data": serialized,
-        "verified": serialized.get("status") == "approved",
+        "data": {
+            **session,
+            "qr_src": qr_src,
+            "upi_intent": _upi_intent_for_amount(Decimal(INSTANT_CONSULT_FEE_INR), payment_ref=session_id),
+        },
+        "automation_enabled": _instant_payment_automation_enabled(),
+        "manual_claim_enabled": _instant_manual_payment_claim_enabled(),
         "client_notice": (
-            "Payment verified. You can now send one message."
-            if serialized.get("status") == "approved"
-            else "Payment reference submitted. It will unlock once verified by admin."
+            "Scan and pay. Unlock happens automatically once payment is confirmed."
+            if _instant_payment_automation_enabled()
+            else "Session created, but automatic confirmation is not configured yet."
         ),
     }
+
+
+@app.get("/api/consult/payments/session/{session_id}")
+async def consult_get_payment_session(
+    session_id: str,
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
+    ref = get_firestore().collection("instant_consult_payment_sessions").document(session_id)
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(404, "Payment session not found")
+
+    session_data = snap.to_dict() or {}
+    if str(session_data.get("uid") or "") != str(identity.get("uid") or ""):
+        raise HTTPException(403, "Payment session does not belong to this account")
+
+    status = (session_data.get("status") or "").strip().lower()
+    if status in {"created", "awaiting_payment"} and _is_payment_session_expired(session_data):
+        ref.set({"status": "expired", "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+        snap = ref.get()
+
+    session = _serialize_payment_session(snap)
+    session["qr_src"] = f"/api/payments/upi-qr/instant-consult?tr={session_id}"
+    session["upi_intent"] = _upi_intent_for_amount(Decimal(INSTANT_CONSULT_FEE_INR), payment_ref=session_id)
+
+    return {
+        "ok": True,
+        "data": session,
+        "verified": session.get("status") == "paid",
+    }
+
+
+@app.post("/api/payments/webhooks/instant-consult")
+async def consult_payment_webhook(
+    body: InstantConsultPaymentWebhookRequest,
+    x_qhs_payment_secret: str | None = Header(default=None, alias="X-QHS-Payment-Secret"),
+) -> dict[str, Any]:
+    configured_secret = _instant_payment_webhook_secret()
+    if not configured_secret:
+        raise HTTPException(503, "Automatic payment webhook is not configured")
+
+    incoming_secret = (x_qhs_payment_secret or "").strip()
+    if not incoming_secret or not hmac.compare_digest(incoming_secret, configured_secret):
+        raise HTTPException(401, "Invalid webhook secret")
+
+    provider_status = (body.status or "").strip().lower()
+    if provider_status in {"paid", "success", "captured", "txn_success", "completed"}:
+        next_status = "paid"
+    elif provider_status in {"failed", "cancelled", "canceled", "expired", "timeout", "txn_failure"}:
+        next_status = "failed"
+    else:
+        raise HTTPException(400, "Unsupported webhook payment status")
+
+    ref = get_firestore().collection("instant_consult_payment_sessions").document(body.session_id)
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(404, "Payment session not found")
+
+    existing = snap.to_dict() or {}
+    current_status = (existing.get("status") or "").strip().lower()
+    if current_status == "consumed":
+        return {"ok": True, "data": _serialize_payment_session(snap), "idempotent": True}
+
+    amount_expected = int(existing.get("amount") or INSTANT_CONSULT_FEE_INR)
+    if int(body.amount) != amount_expected:
+        raise HTTPException(400, "Payment amount mismatch")
+
+    patch: dict[str, Any] = {
+        "status": next_status,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+        "provider_event_id": (body.provider_event_id or "").strip() or None,
+        "provider_payment_id": (body.provider_payment_id or "").strip() or None,
+        "failure_reason": (body.failure_reason or "").strip() or None,
+    }
+    if body.payment_reference:
+        patch["payment_reference"] = _normalize_payment_reference(body.payment_reference)
+    if next_status == "paid":
+        patch["paid_at"] = firestore.SERVER_TIMESTAMP
+        patch["failure_reason"] = None
+
+    ref.set(patch, merge=True)
+    updated = ref.get()
+    log.info(
+        "Instant payment session update: session=%s status=%s provider_payment_id=%s",
+        body.session_id,
+        next_status,
+        (body.provider_payment_id or "").strip() or "-",
+    )
+    return {"ok": True, "data": _serialize_payment_session(updated)}
+
+
+@app.post("/api/consult/payments/claim")
+async def consult_claim_payment(
+    body: InstantConsultPaymentClaimRequest,
+    identity: dict[str, Any] = Depends(require_client),
+) -> dict[str, Any]:
+    _ = body
+    _ = identity
+    raise HTTPException(410, "Manual payment references are disabled. Start a secure payment session.")
 
 
 @app.post("/api/consult/messages")
@@ -1150,18 +1638,23 @@ async def consult_create_message(
     background_tasks: BackgroundTasks,
     identity: dict[str, Any] = Depends(require_client),
 ) -> dict[str, Any]:
-    type_id = body.type_id.strip()
-    if type_id not in CONSULT_TYPE_IDS:
-        raise HTTPException(400, "Invalid consult type")
+    type_id = _normalize_consult_type_id(body.type_id)
 
     if body.payment_amount != INSTANT_CONSULT_FEE_INR:
         raise HTTPException(400, f"Instant Consult requires INR {INSTANT_CONSULT_FEE_INR} per message")
 
-    claim_id = body.payment_claim_id.strip()
-    if len(claim_id) < 6:
-        raise HTTPException(400, "Payment claim is required")
+    claim_id = (body.payment_claim_id or "").strip()
+    session_id = (body.payment_session_id or "").strip()
+    if claim_id:
+        raise HTTPException(410, "Manual payment references are disabled. Start a secure payment session.")
+    if not session_id:
+        raise HTTPException(402, "Start a secure payment session before sending your message")
 
-    normalized_payment_reference = _normalize_payment_reference(body.payment_reference)
+    normalized_payment_reference = (
+        _normalize_payment_reference(body.payment_reference)
+        if body.payment_reference
+        else None
+    )
 
     question = body.question.strip()
     if len(question) < 8:
@@ -1196,21 +1689,33 @@ async def consult_create_message(
         merge=True,
     )
 
-    claim_ref = db.collection("instant_consult_payment_claims").document(claim_id)
-    claim_snap = claim_ref.get()
-    if not claim_snap.exists:
-        raise HTTPException(402, "Payment has not been verified yet")
+    session_ref = db.collection("instant_consult_payment_sessions").document(session_id)
+    payment_reference_value = session_id
+    payment_session_id_value = session_id or None
 
-    claim_data = claim_snap.to_dict() or {}
-    claim_status = (claim_data.get("status") or "").strip().lower()
-    if str(claim_data.get("uid") or "") != uid:
-        raise HTTPException(403, "Payment proof does not belong to this account")
-    if claim_status == "consumed":
+    session_snap = session_ref.get()
+    if not session_snap.exists:
+        raise HTTPException(402, "Payment session not found")
+
+    session_data = session_snap.to_dict() or {}
+    session_status = (session_data.get("status") or "").strip().lower()
+    if str(session_data.get("uid") or "") != uid:
+        raise HTTPException(403, "Payment session does not belong to this account")
+    if _is_payment_session_expired(session_data) and session_status in {"created", "awaiting_payment"}:
+        raise HTTPException(402, "Payment session expired. Start a fresh payment.")
+    if session_status == "consumed":
         raise HTTPException(409, "This payment has already been used")
-    if claim_status != "approved":
-        raise HTTPException(402, "Payment is pending admin verification")
-    if str(claim_data.get("payment_reference") or "") != normalized_payment_reference:
+    if session_status != "paid":
+        raise HTTPException(402, "Payment is still awaiting confirmation")
+    session_amount = int(session_data.get("amount") or INSTANT_CONSULT_FEE_INR)
+    if session_amount != INSTANT_CONSULT_FEE_INR:
+        raise HTTPException(400, "Payment session amount mismatch")
+
+    session_reference = str(session_data.get("payment_reference") or "").strip()
+    if normalized_payment_reference and session_reference and session_reference != normalized_payment_reference:
         raise HTTPException(400, "Payment reference mismatch")
+    if session_reference:
+        payment_reference_value = session_reference
 
     doc_ref = db.collection("instant_consult_messages").document()
     payload = {
@@ -1219,39 +1724,42 @@ async def consult_create_message(
         "display_name": display_name,
         "provider": sign_in_provider or "password",
         "type_id": type_id,
+        "thread_type_id": type_id,
         "type_label": type_label,
         "question": question,
         "status": "new",
         "payment_amount": INSTANT_CONSULT_FEE_INR,
         "payment_currency": "INR",
-        "payment_reference": normalized_payment_reference,
-        "payment_claim_id": claim_id,
+        "payment_reference": payment_reference_value,
+        "payment_claim_id": None,
+        "payment_session_id": payment_session_id_value,
         "created_at": firestore.SERVER_TIMESTAMP,
         "updated_at": firestore.SERVER_TIMESTAMP,
     }
 
     @firestore.transactional
     def _consume_payment_and_create_message(transaction: Any) -> None:
-        tx_claim = claim_ref.get(transaction=transaction)
-        if not tx_claim.exists:
-            raise HTTPException(402, "Payment has not been verified yet")
-        tx_data = tx_claim.to_dict() or {}
+        tx_session = session_ref.get(transaction=transaction)
+        if not tx_session.exists:
+            raise HTTPException(402, "Payment session not found")
+        tx_data = tx_session.to_dict() or {}
         tx_status = (tx_data.get("status") or "").strip().lower()
         if str(tx_data.get("uid") or "") != uid:
-            raise HTTPException(403, "Payment proof does not belong to this account")
+            raise HTTPException(403, "Payment session does not belong to this account")
         if tx_status == "consumed":
             raise HTTPException(409, "This payment has already been used")
-        if tx_status != "approved":
-            raise HTTPException(402, "Payment is pending admin verification")
+        if tx_status != "paid":
+            raise HTTPException(402, "Payment is still awaiting confirmation")
 
         transaction.update(
-            claim_ref,
+            session_ref,
             {
                 "status": "consumed",
                 "consumed_for_message_id": doc_ref.id,
                 "updated_at": firestore.SERVER_TIMESTAMP,
             },
         )
+
         transaction.set(doc_ref, payload)
 
     _consume_payment_and_create_message(db.transaction())
@@ -1267,19 +1775,14 @@ async def consult_create_message(
     }
 
 
-@app.get("/api/payments/upi-qr")
-async def upi_qr(amount: str = "2500") -> Response:
-    try:
-        parsed_amount = Decimal((amount or "0").strip())
-    except (InvalidOperation, AttributeError):
-        raise HTTPException(400, "Invalid amount")
-
-    if parsed_amount <= 0:
+async def _upi_qr_response_for_amount(amount: Decimal, payment_ref: str | None = None) -> Response:
+    rounded = amount.quantize(Decimal("0.01"))
+    if rounded <= 0:
         raise HTTPException(400, "Amount must be greater than zero")
 
-    rounded = parsed_amount.quantize(Decimal("0.01"))
+    safe_payment_ref = (payment_ref or "").strip() or None
 
-    if rounded in STATIC_QR_OVERRIDES:
+    if safe_payment_ref is None and rounded in STATIC_QR_OVERRIDES:
         static_path = STATIC_QR_OVERRIDES[rounded]
         if static_path.exists():
             media_type = "image/jpeg" if static_path.suffix.lower() in {".jpg", ".jpeg"} else "image/png"
@@ -1289,7 +1792,7 @@ async def upi_qr(amount: str = "2500") -> Response:
                 headers={"Cache-Control": "public, max-age=86400"},
             )
 
-    upi_uri = _upi_intent_for_amount(rounded)
+    upi_uri = _upi_intent_for_amount(rounded, payment_ref=safe_payment_ref)
     cached = _dynamic_qr_cache.get(upi_uri)
     if cached is None:
         try:
@@ -1309,6 +1812,24 @@ async def upi_qr(amount: str = "2500") -> Response:
         content=cached,
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.get("/api/payments/upi-qr/instant-consult")
+async def upi_qr_instant_consult(tr: str | None = None) -> Response:
+    return await _upi_qr_response_for_amount(Decimal(INSTANT_CONSULT_FEE_INR), payment_ref=tr)
+
+
+@app.get("/api/payments/upi-qr/booking-consultation")
+async def upi_qr_booking_consultation() -> Response:
+    return await _upi_qr_response_for_amount(Decimal(BOOKING_CONSULT_FEE_INR))
+
+
+@app.get("/api/payments/upi-qr")
+async def upi_qr_deprecated() -> Response:
+    raise HTTPException(
+        410,
+        "Amount-based QR route is disabled. Use /api/payments/upi-qr/instant-consult or /api/payments/upi-qr/booking-consultation",
     )
 
 
@@ -1359,6 +1880,7 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
         config = _get_doc(*CONFIG_DOC)
     except Exception:
         config = {}
+    config_source = "firestore" if config else "defaults"
 
     consult_counts: dict[str, int] = {"new": 0, "inprogress": 0, "done": 0}
     try:
@@ -1393,7 +1915,8 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
             "fee_inr": INSTANT_CONSULT_FEE_INR,
         },
         "firebase_configured": bool(os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")),
-        "config_present": bool(config),
+        "config_present": True,
+        "config_source": config_source,
         "server_time": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -1504,9 +2027,9 @@ async def admin_list_payment_claims(
         query = query.where("status", "==", status_filter)
 
     try:
-        docs = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(safe_limit).stream()
+        docs = list(query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(safe_limit).stream())
     except Exception:
-        docs = query.limit(safe_limit).stream()
+        docs = list(query.limit(safe_limit).stream())
 
     rows = [_serialize_payment_claim(d) for d in docs]
     rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
@@ -1561,9 +2084,9 @@ async def admin_list_consult_messages(
         query = query.where("status", "==", status_filter)
 
     try:
-        docs = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(safe_limit).stream()
+        docs = list(query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(safe_limit).stream())
     except Exception:
-        docs = query.limit(safe_limit).stream()
+        docs = list(query.limit(safe_limit).stream())
 
     rows = [_serialize_consult_message(d) for d in docs]
     rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)

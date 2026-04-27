@@ -10,21 +10,80 @@ import { apiUrl } from '@/utils';
 const SMOOTH = { duration: 0.6, ease: [0.16, 1, 0.3, 1] };
 const SMOOTH_SLOW = { duration: 0.65, ease: [0.16, 1, 0.3, 1] };
 
-const SERVICES = [
+const SERVICES = Array.from(new Set([
+  // Services page catalog
+  'Hypnotherapy',
+  'Neuro-Linguistic Programming (NLP)',
+  'Cognitive Behavioral Therapy (CBT)',
+  'Counseling & Psychotherapy',
+  'Guided Meditation & Breathwork',
   'Reiki Healing',
-  'Deep Chakra Healing',
+  'Chakra Healing & Balancing',
+  'Meridian Work',
+  'Points Therapy For Release',
+  'Jin Shin Jyutsu',
+  'Prana Energy Therapy',
+  'Theta State Healing',
+  'Aura Clearing & Repair',
+  'Space & Home Clearing',
+  'Dowsing & Pendulum Work',
+  'Protection & Shielding Rituals',
+  'Inner Child Healing',
+  'Past Life Regression (PLR)',
+  'Cellular Memory Release',
+  'EFT with Matrix Reimprinting',
+  'Shadow Work',
+  'Ancestral Lineage Healing',
   'Akashic Records',
+  'Karmic Cord Cutting',
+  'Pitra Dosh Remediation',
+  'Womb Healing & Activation',
+  'Pre-Natal & Birth Trauma Healing',
+  'Menstrual Cycle Alignment',
+  'Divine Feminine Awakening',
+  'Sound Healing',
+  'Color Therapy',
+  'Water Therapy & Charging',
+  'Switch Words',
+  'Grabovoi Number Sequences',
+  'Zibu Symbols',
+  'Sigil Crafting',
+  'Runes Reading & Healing',
+  'Candle Magic Rituals',
+  'Magic Spells & Manifestation Work',
+  "Ho'oponopono Sessions",
+  'Auto Writing / Channelling',
+  'Havan (Yagna)',
+  'Grih Shanti Puja',
+  'Pitru Dosh Puja',
+  'Purnima (Full Moon) Ritual',
+  'Amavasya (New Moon) Ritual',
+  'Maha Shivratri Ritual',
+  'Auspicious Day & Festival Rituals',
+  'Chakra Tantra',
+  'Personalized Mantra Prescription',
+  '5-Day Intensive Healing Program',
+  'Customized Sessions',
+  'Relationship & Cord Disentanglement',
+  'Abundance & Financial Block Clearing',
+
+  // Healing page labels and legacy options
+  'Reiki',
+  'Deep Chakra Healing',
   'Past Life Regression',
   'Angel Therapy',
   'Ancestral Healing',
+  'Emotional Freedom Technique',
   'Emotional Freedom Technique (EFT)',
   'Sound Therapy',
-  'Inner Child Healing',
+  'Hypnosis',
   'Hypnosis / Hypnotherapy',
   "Ho'oponopono",
   'Tarot Card Reading',
   'Aura Reading & Clearing',
   'Individual Counseling',
+
+  // Retreats / workshop entries
   'Stress Busting Retreat',
   'Silent Meditation & Yoga Retreat',
   'Chakra Balancing Retreat',
@@ -34,27 +93,38 @@ const SERVICES = [
   'Corporate Workshop / Program',
   "Children's Healing Workshop",
   'Other / Not sure yet',
-];
+]));
 
 const FORMAT = ['In-person (Gurugram)', 'Online — WhatsApp', 'Online — Skype'];
 
-const UPI_QR = apiUrl('/api/payments/upi-qr?amount=2500');
+const UPI_QR = apiUrl('/api/payments/upi-qr/booking-consultation');
 
 const SERVICE_ALIASES = {
   reiki: 'Reiki Healing',
   'reiki healing': 'Reiki Healing',
+  'reiki healing retreat': 'Reiki Healing Retreat',
   'deep chakra healing': 'Deep Chakra Healing',
   'akashic records': 'Akashic Records',
+  'past life regression plr': 'Past Life Regression (PLR)',
   'past life regression': 'Past Life Regression',
   'angel therapy': 'Angel Therapy',
   'ancestral healing': 'Ancestral Healing',
+  'ancestral lineage healing': 'Ancestral Lineage Healing',
   'emotional freedom technique': 'Emotional Freedom Technique (EFT)',
   'emotional freedom technique eft': 'Emotional Freedom Technique (EFT)',
+  'eft with matrix reimprinting': 'EFT with Matrix Reimprinting',
+  'hypnosis': 'Hypnosis',
+  'hypnotherapy': 'Hypnotherapy',
+  'hypnosis hypnotherapy': 'Hypnosis / Hypnotherapy',
+  'counseling psychotherapy': 'Counseling & Psychotherapy',
+  'sound healing': 'Sound Healing',
   'sound therapy': 'Sound Therapy',
-  hypnosis: 'Hypnosis / Hypnotherapy',
-  hypnotherapy: 'Hypnosis / Hypnotherapy',
   "ho'oponopono": "Ho'oponopono",
   'ho’oponopono': "Ho'oponopono",
+  "ho'oponopono sessions": "Ho'oponopono Sessions",
+  'aura reading clearing': 'Aura Reading & Clearing',
+  'aura clearing repair': 'Aura Clearing & Repair',
+  'auto writing channelling': 'Auto Writing / Channelling',
   'other': 'Other / Not sure yet',
   'other / not sure yet': 'Other / Not sure yet',
 };
@@ -320,15 +390,21 @@ export default function Booking() {
   const serviceParam = (searchParams.get('service') || '').trim();
 
   useEffect(() => {
-    if (!serviceParam || form.service) return;
+    if (!serviceParam) {
+      setServiceAutoFilled(false);
+      return;
+    }
     const key = normalizeService(serviceParam);
     const mapped =
       SERVICE_ALIASES[key] ||
       SERVICES.find((option) => normalizeService(option) === key);
-    if (!mapped) return;
-    setForm((prev) => ({ ...prev, service: mapped }));
+    if (!mapped) {
+      setServiceAutoFilled(false);
+      return;
+    }
+    setForm((prev) => (prev.service === mapped ? prev : { ...prev, service: mapped }));
     setServiceAutoFilled(true);
-  }, [serviceParam, form.service]);
+  }, [serviceParam]);
 
   const set = (k) => (e) => setForm(prev => ({ ...prev, [k]: e.target.value }));
   const setService = (e) => {

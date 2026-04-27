@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Clock3, Sparkles } from 'lucide-react';
@@ -447,9 +447,107 @@ const SERVICE_SECTIONS = [
   },
 ];
 
-const TOTAL_SERVICES = SERVICE_SECTIONS.reduce((sum, section) => sum + section.services.length, 0);
+const TABLE_ROW_TINT_A = 'rgba(107, 160, 204, 0.04)';
+const TABLE_ROW_TINT_B = 'rgba(107, 160, 204, 0.016)';
 
-function SectionTable({ section, index }) {
+const BILLING_PROFILE_META = {
+  indian: { label: 'Indian', currency: 'INR' },
+  nonIndian: { label: 'Non-Indian', currency: 'USD' },
+};
+
+const BILLING_PRICE_BY_DURATION = {
+  indian: {
+    '30-45 min': 'INR 2,500',
+    '45 min': 'INR 2,900',
+    '45-60 min': 'INR 3,200',
+    '50 min': 'INR 3,300',
+    '60 min': 'INR 3,900',
+    '60-75 min': 'INR 4,500',
+    '60-90 min': 'INR 5,300',
+    '60-120 min': 'INR 6,400',
+    '75 min': 'INR 4,900',
+    '75-90 min': 'INR 5,600',
+    '90 min': 'INR 5,900',
+    '90-120 min': 'INR 7,400',
+    '90-180 min': 'INR 9,800',
+    '180 min': 'INR 11,000',
+    '5 days': 'INR 125,000',
+  },
+  nonIndian: {
+    '30-45 min': 'USD 65',
+    '45 min': 'USD 75',
+    '45-60 min': 'USD 85',
+    '50 min': 'USD 88',
+    '60 min': 'USD 99',
+    '60-75 min': 'USD 115',
+    '60-90 min': 'USD 129',
+    '60-120 min': 'USD 155',
+    '75 min': 'USD 125',
+    '75-90 min': 'USD 138',
+    '90 min': 'USD 145',
+    '90-120 min': 'USD 178',
+    '90-180 min': 'USD 238',
+    '180 min': 'USD 265',
+    '5 days': 'USD 2,100',
+  },
+};
+
+const BILLING_PRICE_BY_SERVICE_ID = {
+  indian: {
+    // Add per-modality overrides by service id, e.g. 1: 'INR 4,250'
+  },
+  nonIndian: {
+    // Add per-modality overrides by service id, e.g. 1: 'USD 115'
+  },
+};
+
+const BILLING_FALLBACK_LABEL = {
+  indian: 'INR - custom quote',
+  nonIndian: 'USD - custom quote',
+};
+
+function durationBaseLabel(duration) {
+  const base = String(duration || '').split('/')[0].trim();
+  return base.replace(/\s+/g, ' ');
+}
+
+function durationSortKey(label) {
+  const cleaned = String(label || '').toLowerCase();
+  const nums = cleaned.match(/\d+/g)?.map(Number) || [];
+  const first = nums[0] || 9999;
+  if (cleaned.includes('day')) return 10000 + first * 100;
+  return first;
+}
+
+function servicePriceLabel(service, billingProfile) {
+  const serviceId = Number(service?.id);
+  const lineItemOverride = BILLING_PRICE_BY_SERVICE_ID[billingProfile]?.[serviceId];
+  if (lineItemOverride) return lineItemOverride;
+
+  const bucket = durationBaseLabel(service?.duration);
+  return BILLING_PRICE_BY_DURATION[billingProfile]?.[bucket] || BILLING_FALLBACK_LABEL[billingProfile] || 'Custom quote';
+}
+
+function hexToRgba(hex, alpha, fallback) {
+  const raw = String(hex || '').trim();
+  if (!raw.startsWith('#')) return fallback;
+  const normalized = raw.length === 4
+    ? `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`
+    : raw;
+  if (!/^#[0-9a-fA-F]{6}$/.test(normalized)) return fallback;
+
+  const r = parseInt(normalized.slice(1, 3), 16);
+  const g = parseInt(normalized.slice(3, 5), 16);
+  const b = parseInt(normalized.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function SectionTable({ section, index, billingProfile }) {
+  const headerTintStrong = hexToRgba(section.color, 0.24, 'rgba(107, 160, 204, 0.24)');
+  const headerTintSoft = hexToRgba(section.color, 0.1, 'rgba(107, 160, 204, 0.1)');
+  const rowTintA = hexToRgba(section.color, 0.05, TABLE_ROW_TINT_A);
+  const rowTintB = hexToRgba(section.color, 0.02, TABLE_ROW_TINT_B);
+
   return (
     <motion.section
       initial={{ opacity: 0, y: 22 }}
@@ -457,36 +555,39 @@ function SectionTable({ section, index }) {
       viewport={{ once: true, margin: '-80px' }}
       transition={{ duration: 0.75, delay: index * 0.03, ease: [0.22, 1, 0.36, 1] }}
       className="rounded-2xl overflow-hidden"
-      style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}
+      style={{ border: '1px solid var(--border)', background: 'var(--bg-elev)' }}
     >
-      <div className="px-5 lg:px-8 py-4 lg:py-4 flex items-center justify-between gap-4" style={{ background: section.color }}>
-        <h2 className="font-display text-lg lg:text-2xl text-white tracking-tight">
-          {section.number}. {section.title}
+      <div
+        className="px-5 lg:px-8 py-4 lg:py-4 flex items-center justify-between gap-4"
+        style={{
+          background: `linear-gradient(120deg, ${headerTintStrong}, ${headerTintSoft} 70%)`,
+          borderBottom: '1px solid var(--border2)',
+        }}
+      >
+        <h2 className="font-display text-lg lg:text-2xl tracking-tight" style={{ color: 'var(--fg)' }}>
+          {section.title}
         </h2>
-        <span className="text-[10px] lg:text-[11px] tracking-[0.22em] uppercase text-white/80 font-mono whitespace-nowrap">
+        <span className="text-[10px] lg:text-[11px] tracking-[0.22em] uppercase font-mono whitespace-nowrap" style={{ color: 'var(--fg2)' }}>
           {section.services.length} services
         </span>
       </div>
 
-      <div className="hidden lg:grid grid-cols-[68px_1.1fr_2fr_220px] px-8 py-3 text-[10px] tracking-[0.26em] uppercase" style={{ color: 'var(--fg3)', borderBottom: '1px solid var(--border)' }}>
-        <span>#</span>
+      <div className="hidden lg:grid grid-cols-[1.2fr_2fr_220px] px-8 py-3 text-[10px] tracking-[0.26em] uppercase" style={{ color: 'var(--fg3)', borderBottom: '1px solid var(--border)' }}>
         <span>Service</span>
         <span>Description</span>
-        <span className="text-right">Duration / Format</span>
+        <span className="text-right">Price / Duration</span>
       </div>
 
       <div>
         {section.services.map((service, rowIndex) => {
-          const rowBg = rowIndex % 2 === 0 ? section.tintA : section.tintB;
+          const rowBg = rowIndex % 2 === 0 ? rowTintA : rowTintB;
+          const priceLabel = servicePriceLabel(service, billingProfile);
           return (
             <div
               key={service.id}
-              className="hidden lg:grid grid-cols-[68px_1.1fr_2fr_220px] gap-6 px-8 py-5 items-start"
+              className="hidden lg:grid grid-cols-[1.2fr_2fr_220px] gap-6 px-8 py-5 items-start"
               style={{ borderBottom: '1px solid var(--border)', background: rowBg }}
             >
-              <p className="font-mono text-[12px]" style={{ color: 'var(--fg2)' }}>
-                {service.id}
-              </p>
               <div>
                 <h3 className="text-lg leading-tight" style={{ color: 'var(--fg)' }}>
                   {service.name}
@@ -496,13 +597,16 @@ function SectionTable({ section, index }) {
                 {service.description}
               </p>
               <div className="text-right">
+                <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--accent-text)' }}>
+                  {priceLabel}
+                </p>
                 <p className="text-sm font-light" style={{ color: 'var(--fg)' }}>
                   {service.duration}
                 </p>
                 <Link
                   to={`/booking?service=${encodeURIComponent(service.name)}`}
                   className="inline-flex items-center gap-1.5 mt-2 text-[10px] tracking-[0.2em] uppercase hover-accent px-2 py-1 rounded"
-                  style={{ color: 'var(--accent-text)' }}
+                  style={{ color: 'var(--accent-text)', border: '1px solid var(--accent-soft)' }}
                 >
                   Book
                   <ChevronRight className="w-3 h-3" strokeWidth={1.8} />
@@ -514,16 +618,17 @@ function SectionTable({ section, index }) {
 
         <div className="lg:hidden">
           {section.services.map((service, rowIndex) => {
-            const rowBg = rowIndex % 2 === 0 ? section.tintA : section.tintB;
+            const rowBg = rowIndex % 2 === 0 ? rowTintA : rowTintB;
+            const priceLabel = servicePriceLabel(service, billingProfile);
             return (
               <div
                 key={`${service.id}-mobile`}
                 className="px-5 py-5"
                 style={{ borderBottom: '1px solid var(--border)', background: rowBg }}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <p className="text-[11px] font-mono" style={{ color: 'var(--fg3)' }}>
-                    #{service.id}
+                <div className="flex items-start justify-end gap-4">
+                  <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--accent-text)' }}>
+                    {priceLabel}
                   </p>
                   <p className="text-[11px]" style={{ color: 'var(--fg2)' }}>
                     {service.duration}
@@ -538,7 +643,7 @@ function SectionTable({ section, index }) {
                 <Link
                   to={`/booking?service=${encodeURIComponent(service.name)}`}
                   className="inline-flex items-center gap-1.5 mt-4 text-[10px] tracking-[0.2em] uppercase hover-accent px-2 py-1 rounded"
-                  style={{ color: 'var(--accent-text)' }}
+                  style={{ color: 'var(--accent-text)', border: '1px solid var(--accent-soft)' }}
                 >
                   Book
                   <ChevronRight className="w-3 h-3" strokeWidth={1.8} />
@@ -556,10 +661,45 @@ export default function Services() {
   const heroRef = useRef(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '28%']);
+  const [billingProfile, setBillingProfile] = useState('indian');
+  const [activeSectionFilters, setActiveSectionFilters] = useState([]);
+
+  const visibleSections = useMemo(() => {
+    if (!activeSectionFilters.length) return SERVICE_SECTIONS;
+    return SERVICE_SECTIONS.filter((section) => activeSectionFilters.includes(section.title));
+  }, [activeSectionFilters]);
+
+  const visibleServiceCount = useMemo(
+    () => visibleSections.reduce((sum, section) => sum + section.services.length, 0),
+    [visibleSections],
+  );
+
+  const durationBuckets = useMemo(() => {
+    const found = new Set();
+    visibleSections.forEach((section) => {
+      section.services.forEach((service) => {
+        const bucket = durationBaseLabel(service.duration);
+        if (bucket) found.add(bucket);
+      });
+    });
+    return [...found].sort((a, b) => durationSortKey(a) - durationSortKey(b) || a.localeCompare(b));
+  }, [visibleSections]);
+
+  const toggleSectionFilter = (title) => {
+    setActiveSectionFilters((prev) => (
+      prev.includes(title)
+        ? prev.filter((item) => item !== title)
+        : [...prev, title]
+    ));
+  };
+
+  const clearSectionFilters = () => {
+    setActiveSectionFilters([]);
+  };
 
   return (
     <div style={{ background: 'var(--bg)' }}>
-      <section ref={heroRef} className="relative h-[58vh] overflow-hidden" style={{ background: '#0c0a09' }}>
+      <section ref={heroRef} className="relative h-[62vh] overflow-hidden" style={{ background: '#0c0a09' }}>
         <motion.div style={{ y }} className="absolute inset-0 scale-110">
           <img
             src="https://images.unsplash.com/photo-1519834785169-98be25ec3f84?w=2000&q=90"
@@ -567,37 +707,39 @@ export default function Services() {
             className="w-full h-full object-cover opacity-42"
           />
         </motion.div>
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, #0c0a09 0%, transparent 62%)' }} />
-        <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(120deg, rgba(14,16,20,0.65) 12%, rgba(14,16,20,0.2) 52%, transparent 100%)' }} />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, var(--bg) 0%, rgba(12,10,9,0.36) 58%, transparent 100%)' }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 80% 24%, rgba(107,160,204,0.24), transparent 55%)' }} />
 
-        <div className="absolute bottom-0 left-0 p-8 lg:p-16">
-          <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.15 }}
-            className="text-[10px] tracking-[0.42em] uppercase mb-4"
-            style={{ color: 'rgba(250,250,249,0.38)' }}
-          >
-            Quantum Healing Space
-          </motion.p>
-          <motion.h1
-            initial={{ opacity: 0, y: 22 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.95, delay: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="text-5xl lg:text-7xl hero-display"
-            style={{ color: '#fafaf9', fontFamily: 'Cormorant Garamond, serif' }}
-          >
-            Services
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.85, delay: 0.42 }}
-            className="mt-6 max-w-2xl text-sm lg:text-[15px] font-light leading-relaxed"
-            style={{ color: 'rgba(250,250,249,0.76)' }}
-          >
-            Comprehensive wellness and healing services curated across mind, energy, ritual, and transformational modalities.
-          </motion.p>
+        <div className="absolute bottom-0 left-0 right-0 p-8 lg:p-16">
+          <div className="max-w-7xl mx-auto">
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.15 }}
+              className="text-[10px] tracking-[0.42em] uppercase mb-4"
+              style={{ color: 'rgba(250,250,249,0.46)' }}
+            >
+              ◊ Service Catalogue
+            </motion.p>
+            <motion.h1
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.95, delay: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="hero-display text-6xl lg:text-[7.2rem]"
+              style={{ color: '#fafaf9' }}
+            >
+              Services
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.85, delay: 0.42 }}
+              className="mt-6 max-w-2xl text-sm lg:text-[15px] font-light leading-relaxed"
+              style={{ color: 'rgba(250,250,249,0.76)' }}
+            >
+              Comprehensive wellness and healing offerings across mind, energy, ritual, and transformational modalities.
+            </motion.p>
+          </div>
         </div>
       </section>
 
@@ -615,30 +757,62 @@ export default function Services() {
           aria-hidden
         />
 
-        <div className="relative max-w-7xl mx-auto px-5 lg:px-10 py-16 lg:py-24">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-12">
-            <div className="rounded-xl px-4 py-3" style={{ border: '1px solid var(--border2)', background: 'var(--accent-dim)' }}>
+        <div className="relative max-w-7xl mx-auto px-6 lg:px-16 py-16 lg:py-24">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-10">
+            <div className="rounded-xl px-4 py-3.5" style={{ border: '1px solid var(--border)', background: 'var(--bg-elev)' }}>
               <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--fg3)' }}>Coverage</p>
-              <p className="text-lg mt-1" style={{ color: 'var(--fg)' }}>11 Sections</p>
+              <p className="text-lg mt-1" style={{ color: 'var(--fg)' }}>{visibleSections.length} Sections</p>
             </div>
-            <div className="rounded-xl px-4 py-3" style={{ border: '1px solid var(--border2)', background: 'var(--accent-dim)' }}>
+            <div className="rounded-xl px-4 py-3.5" style={{ border: '1px solid var(--border)', background: 'var(--bg-elev)' }}>
               <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--fg3)' }}>Service Count</p>
-              <p className="text-lg mt-1" style={{ color: 'var(--fg)' }}>{TOTAL_SERVICES} Modalities</p>
+              <p className="text-lg mt-1" style={{ color: 'var(--fg)' }}>{visibleServiceCount} Modalities</p>
             </div>
-            <div className="rounded-xl px-4 py-3" style={{ border: '1px solid var(--border2)', background: 'var(--accent-dim)' }}>
+            <div className="rounded-xl px-4 py-3.5" style={{ border: '1px solid var(--border)', background: 'var(--bg-elev)' }}>
               <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--fg3)' }}>Duration</p>
-              <p className="text-lg mt-1" style={{ color: 'var(--fg)' }}>30 min to 5 days</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {durationBuckets.map((bucket) => (
+                  <span
+                    key={`duration-${bucket}`}
+                    className="px-2 py-1 rounded-full text-[10px] tracking-[0.16em] uppercase"
+                    style={{ border: '1px solid var(--border2)', color: 'var(--fg2)', background: 'var(--bg)' }}
+                  >
+                    {bucket}
+                  </span>
+                ))}
+              </div>
             </div>
-            <div className="rounded-xl px-4 py-3" style={{ border: '1px solid var(--border2)', background: 'var(--accent-dim)' }}>
-              <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--fg3)' }}>Billing Note</p>
-              <p className="text-lg mt-1" style={{ color: 'var(--fg)' }}>Charges in INR</p>
+            <div className="rounded-xl px-4 py-3.5" style={{ border: '1px solid var(--border)', background: 'var(--bg-elev)' }}>
+              <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--fg3)' }}>Billing</p>
+              <div className="mt-2 flex items-center gap-1.5">
+                {Object.entries(BILLING_PROFILE_META).map(([profileId, meta]) => {
+                  const active = billingProfile === profileId;
+                  return (
+                    <button
+                      key={`billing-profile-${profileId}`}
+                      type="button"
+                      onClick={() => setBillingProfile(profileId)}
+                      className="px-2.5 py-1 rounded-full text-[10px] tracking-[0.16em] uppercase transition-colors"
+                      style={{
+                        border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
+                        color: active ? 'var(--accent-text)' : 'var(--fg2)',
+                        background: active ? 'var(--accent-dim)' : 'transparent',
+                      }}
+                    >
+                      {meta.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] mt-2" style={{ color: 'var(--fg2)' }}>
+                Showing {BILLING_PROFILE_META[billingProfile]?.currency || 'INR'} line-item prices.
+              </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-7 gap-y-2 mb-10">
+          <div className="flex flex-wrap items-center gap-x-7 gap-y-2 mb-7">
             <p className="inline-flex items-center gap-2 text-[10px] tracking-[0.24em] uppercase" style={{ color: 'var(--accent-text)' }}>
               <Sparkles className="w-3.5 h-3.5" strokeWidth={1.8} />
-              Comprehensive Wellness & Healing Services - Charges in INR
+              Unified Services Directory
             </p>
             <p className="inline-flex items-center gap-2 text-[10px] tracking-[0.24em] uppercase" style={{ color: 'var(--fg3)' }}>
               <Clock3 className="w-3.5 h-3.5" strokeWidth={1.8} />
@@ -646,15 +820,52 @@ export default function Services() {
             </p>
           </div>
 
+          <div className="mb-10">
+            <p className="text-[10px] tracking-[0.24em] uppercase" style={{ color: 'var(--fg3)' }}>Filter sections (multi-select)</p>
+            <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
+              <button
+                type="button"
+                onClick={clearSectionFilters}
+                className="inline-flex items-center whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] tracking-[0.18em] uppercase hover-accent"
+                style={{
+                  border: '1px solid var(--border2)',
+                  color: activeSectionFilters.length ? 'var(--fg2)' : 'var(--accent-text)',
+                  background: activeSectionFilters.length ? 'transparent' : 'var(--accent-dim)',
+                }}
+              >
+                All Sections
+              </button>
+
+              {SERVICE_SECTIONS.map((section) => {
+                const selected = activeSectionFilters.includes(section.title);
+                return (
+                  <button
+                    key={`filter-${section.title}`}
+                    type="button"
+                    onClick={() => toggleSectionFilter(section.title)}
+                    className="inline-flex items-center whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] tracking-[0.18em] uppercase hover-accent"
+                    style={{
+                      border: `1px solid ${selected ? hexToRgba(section.color, 0.46, 'var(--accent)') : 'var(--border2)'}`,
+                      color: selected ? section.color : 'var(--fg2)',
+                      background: selected ? hexToRgba(section.color, 0.14, 'var(--accent-dim)') : 'transparent',
+                    }}
+                  >
+                    {section.title}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="space-y-8 lg:space-y-10">
-            {SERVICE_SECTIONS.map((section, sectionIndex) => (
-              <SectionTable key={section.title} section={section} index={sectionIndex} />
+            {visibleSections.map((section, sectionIndex) => (
+              <SectionTable key={section.title} section={section} index={sectionIndex} billingProfile={billingProfile} />
             ))}
           </div>
         </div>
       </section>
 
-      <section className="px-5 lg:px-10 pb-16 lg:pb-24">
+      <section className="px-6 lg:px-16 pb-16 lg:pb-24">
         <div
           className="max-w-7xl mx-auto rounded-2xl px-6 lg:px-10 py-8 lg:py-10"
           style={{

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -9,7 +9,6 @@ import {
   Loader2,
   Lock,
   LogOut,
-  Mail,
   Maximize2,
   Mic,
   Send,
@@ -20,25 +19,33 @@ import {
   createUserWithEmailAndPassword,
   getIdToken,
   onAuthStateChanged,
+  sendEmailVerification,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   updateProfile,
 } from 'firebase/auth';
 import Footer from '@/components/wellness/Footer';
-import { apiUrl } from '@/utils';
+import { apiUrl, createPageUrl } from '@/utils';
 import { firebaseAuth, firebaseConfigured, firebaseGoogleProvider } from '@/lib/firebaseClient';
 
 const WAIT_NOTICE = 'Please wait for our reply (this may take up to 24 hours).';
 const INSTANT_FEE_LABEL = '₹1,500';
 const INSTANT_FEE_AMOUNT = 1500;
-const PAYMENT_QR_SRC = apiUrl('/api/payments/upi-qr?amount=1500');
+const PAYMENT_QR_SRC = apiUrl('/api/payments/upi-qr/instant-consult');
+const DEFAULT_PAYMENT_CAPABILITIES = {
+  provider: 'paytm',
+  automation_enabled: false,
+  manual_claim_enabled: false,
+  session_ttl_minutes: 30,
+  fee_inr: INSTANT_FEE_AMOUNT,
+};
 
 const REQUESTED_CONSULT_TYPES = [
   {
-    id: 'grabovoy-codes',
+    id: 'grabovoi-codes',
     legacyTypeId: 'career-abundance',
-    label: 'Grabovoy Codes',
+    label: 'Grabovoi Codes',
     description: 'Numeric sequence guidance for healing intentions, restoration targets, and manifestation alignment.',
     accent: '#3E63AE',
     images: [
@@ -49,6 +56,23 @@ const REQUESTED_CONSULT_TYPES = [
       {
         place: 'Focused Number Meditation',
         src: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&q=85',
+      },
+    ],
+  },
+  {
+    id: 'zibu',
+    legacyTypeId: 'healing-messages',
+    label: 'Zibu Chat',
+    description: 'Real-time Zibu chat for immediate guidance, messages, and intuitive updates.',
+    accent: '#00C2FF',
+    images: [
+      {
+        place: 'Live Chat Panel',
+        src: 'https://images.unsplash.com/photo-1516280440614-6697286d5d10?w=1200&q=85',
+      },
+      {
+        place: 'Message Flow',
+        src: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1200&q=85',
       },
     ],
   },
@@ -139,12 +163,27 @@ const REQUESTED_CONSULT_TYPES = [
   },
 ];
 
+const CONSULT_SELECTION_TABS = [
+  { id: 'manual', label: 'Let me select' },
+  { id: 'auto', label: 'Auto' },
+];
+
+const AUTO_CONSULT_THREAD = {
+  id: 'recommended-best-practice',
+  heading: 'Get Instant Consultation with our Recommended best practice',
+  accent: '#C6873A',
+};
+
 function statusPill(status) {
   const normalized = String(status || 'new').toLowerCase();
   if (normalized === 'done') {
     return {
       label: 'Done',
-      style: { background: 'rgba(38, 132, 86, 0.18)', color: '#63E6A8', border: '1px solid rgba(99, 230, 168, 0.34)' },
+      style: {
+        background: 'var(--status-done-bg)',
+        color: 'var(--status-done-fg)',
+        border: '1px solid var(--status-done-border)',
+      },
     };
   }
   if (normalized === 'inprogress' || normalized === 'pending') {
@@ -164,6 +203,27 @@ function formatTs(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return 'Just now';
   return d.toLocaleString();
+}
+
+function isUnverifiedPasswordUser(user) {
+  if (!user) return false;
+  const providers = Array.isArray(user.providerData) ? user.providerData : [];
+  const usesPasswordSignIn = providers.some((item) => item?.providerId === 'password');
+  return usesPasswordSignIn && !user.emailVerified;
+}
+
+function buildVerificationActionSettings() {
+  if (typeof window === 'undefined') return undefined;
+  return {
+    url: `${window.location.origin}/auth?mode=login`,
+    handleCodeInApp: false,
+  };
+}
+
+function resolveApiMediaSrc(pathOrUrl, fallback) {
+  if (!pathOrUrl) return fallback;
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  return apiUrl(pathOrUrl);
 }
 
 async function parseApiError(res) {
@@ -200,6 +260,9 @@ function humanizeAuthError(err, fallback) {
   if (code.includes('invalid-email')) {
     return 'Please enter a valid email address.';
   }
+  if (code.includes('unauthorized-continue-uri') || code.includes('invalid-continue-uri')) {
+    return 'Verification link domain is not authorized in Firebase Auth settings. Add your site domain to Authorized domains.';
+  }
   if (
     code.includes('invalid-credential')
     || code.includes('wrong-password')
@@ -222,29 +285,37 @@ function humanizeAuthError(err, fallback) {
 }
 
 export default function InstantConsult() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const onboardingCardRef = useRef(null);
   const paymentCardRef = useRef(null);
 
-  const [types] = useState(REQUESTED_CONSULT_TYPES);
+  const [types, setTypes] = useState(REQUESTED_CONSULT_TYPES);
   const [selectedTypeId, setSelectedTypeId] = useState(REQUESTED_CONSULT_TYPES[0]?.id || '');
-  const [typeSubmissionMode, setTypeSubmissionMode] = useState('modern');
+  const [consultSelectionTab, setConsultSelectionTab] = useState('manual');
+  const loadMessagesRequestRef = useRef(0);
 
   const [authUser, setAuthUser] = useState(null);
   const [idToken, setIdToken] = useState('');
   const [authMode, setAuthMode] = useState('signup');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
 
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
-  const [paymentReference, setPaymentReference] = useState('');
-  const [paymentClaimId, setPaymentClaimId] = useState('');
+  const [paymentSessionId, setPaymentSessionId] = useState('');
+  const [paymentSessionStatus, setPaymentSessionStatus] = useState('');
   const [paymentUnlocked, setPaymentUnlocked] = useState(false);
-  const [paymentVerifying, setPaymentVerifying] = useState(false);
+  const [paymentStarting, setPaymentStarting] = useState(false);
+  const [paymentCapabilities, setPaymentCapabilities] = useState(DEFAULT_PAYMENT_CAPABILITIES);
+  const [paymentCapabilitiesLoaded, setPaymentCapabilitiesLoaded] = useState(false);
   const [paymentNotice, setPaymentNotice] = useState('');
+  const [paymentQrSrc, setPaymentQrSrc] = useState(PAYMENT_QR_SRC);
+  const [paymentUpiIntent, setPaymentUpiIntent] = useState('');
   const [qrModalOpen, setQrModalOpen] = useState(false);
 
   const [draft, setDraft] = useState('');
@@ -253,20 +324,33 @@ export default function InstantConsult() {
   const [sendNotice, setSendNotice] = useState('');
   const [sendError, setSendError] = useState('');
 
+  const emailVerificationPending = useMemo(() => isUnverifiedPasswordUser(authUser), [authUser]);
+  const paymentMode = useMemo(() => {
+    if (paymentCapabilities?.automation_enabled) return 'auto';
+    return 'blocked';
+  }, [paymentCapabilities]);
+
   const selectedType = useMemo(
     () => types.find((type) => type.id === selectedTypeId) || types[0] || null,
     [types, selectedTypeId],
   );
+  const isAutoConsult = consultSelectionTab === 'auto';
+  const showConsultTypePicker = consultSelectionTab === 'manual';
+  const activeThreadTypeId = isAutoConsult ? AUTO_CONSULT_THREAD.id : (selectedType?.id || '');
 
   const requestedMode = useMemo(
     () => String(searchParams.get('mode') || '').trim().toLowerCase(),
     [searchParams],
   );
+  const instantConsultHref = createPageUrl('Instant Consult');
 
-  const consultAccent = selectedType?.accent || 'var(--accent)';
+  const consultAccent = isAutoConsult ? AUTO_CONSULT_THREAD.accent : (selectedType?.accent || '#3E63AE');
+  const chatHeading = isAutoConsult
+    ? AUTO_CONSULT_THREAD.heading
+    : (selectedType?.label || 'Select a consult type');
 
-  const bringPanelIntoView = useCallback((panel) => {
-    const target = panel === 'signup' ? onboardingCardRef.current : paymentCardRef.current;
+  const bringPaymentIntoView = useCallback(() => {
+    const target = paymentCardRef.current;
     if (!target) return;
 
     target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -277,26 +361,31 @@ export default function InstantConsult() {
       if (focusNode && typeof focusNode.focus === 'function') {
         focusNode.focus({ preventScroll: true });
       }
-    }, panel === 'signup' ? 260 : 220);
+    }, 220);
   }, []);
 
-  const nudgeSignup = useCallback(() => {
-    setAuthMode('signup');
-    setAuthError('');
-    bringPanelIntoView('signup');
-  }, [bringPanelIntoView]);
+  const nudgeSignup = useCallback((mode = 'signup') => {
+    const normalizedMode = mode === 'login' ? 'login' : 'signup';
+    navigate(`/auth?mode=${normalizedMode}&next=${encodeURIComponent(instantConsultHref)}`);
+  }, [navigate, instantConsultHref]);
 
   const nudgePayment = useCallback(() => {
-    bringPanelIntoView('payment');
-  }, [bringPanelIntoView]);
+    bringPaymentIntoView();
+  }, [bringPaymentIntoView]);
 
   useEffect(() => {
-    if (requestedMode !== 'signup' || authUser) return;
-    const timer = setTimeout(() => {
-      nudgeSignup();
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [requestedMode, authUser, nudgeSignup]);
+    if (authUser) return;
+    if (requestedMode !== 'signup' && requestedMode !== 'login') return;
+    navigate(`/auth?mode=${requestedMode}&next=${encodeURIComponent(instantConsultHref)}`, { replace: true });
+  }, [requestedMode, authUser, navigate, instantConsultHref]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return undefined;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   useEffect(() => {
     let cancelled = false;
@@ -308,14 +397,29 @@ export default function InstantConsult() {
       .then((payload) => {
         if (cancelled) return;
         const remote = Array.isArray(payload?.data) ? payload.data : [];
-        const remoteIds = new Set(remote.map((item) => item?.id).filter(Boolean));
-        const supportsModernIds = REQUESTED_CONSULT_TYPES.every((item) => remoteIds.has(item.id));
-        setTypeSubmissionMode(supportsModernIds ? 'modern' : 'legacy');
+        if (!remote.length) return;
+        const byId = new Map(REQUESTED_CONSULT_TYPES.map((item) => [item.id, item]));
+        const merged = remote
+          .map((item) => {
+            const id = String(item?.id || '').trim();
+            if (!id || !byId.has(id)) return null;
+            const local = byId.get(id);
+            return {
+              id,
+              label: String(item?.label || local?.label || id),
+              description: String(item?.description || local?.description || ''),
+              accent: String(item?.accent || local?.accent || '#3E63AE'),
+              images: Array.isArray(item?.images) && item.images.length
+                ? item.images
+                : (Array.isArray(local?.images) ? local.images : []),
+            };
+          })
+          .filter(Boolean);
+        if (!merged.length) return;
+        setTypes(merged);
+        setSelectedTypeId((prev) => (merged.some((item) => item.id === prev) ? prev : merged[0].id));
       })
-      .catch(() => {
-        if (cancelled) return;
-        setTypeSubmissionMode('legacy');
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -328,64 +432,148 @@ export default function InstantConsult() {
     const unsub = onAuthStateChanged(firebaseAuth, async (user) => {
       setAuthUser(user);
       if (user) {
+        if (isUnverifiedPasswordUser(user)) {
+          setIdToken('');
+          setMessages([]);
+          setPaymentUnlocked(false);
+          setPaymentSessionId('');
+          setPaymentSessionStatus('');
+          setPaymentNotice('');
+          setPaymentQrSrc(PAYMENT_QR_SRC);
+          setPaymentUpiIntent('');
+          setPaymentCapabilitiesLoaded(false);
+          setAuthMode('login');
+          setAuthError('Please verify your email before using Instant Consult.');
+          setAuthNotice((prev) => prev || `Check your inbox/spam for the verification link sent to ${user.email || 'your email'}.`);
+          setSendNotice('');
+          return;
+        }
+
         const token = await getIdToken(user, true);
         setIdToken(token);
       } else {
         setIdToken('');
+        setAuthNotice('');
+        setPaymentCapabilities(DEFAULT_PAYMENT_CAPABILITIES);
+        setPaymentCapabilitiesLoaded(false);
       }
     });
     return () => unsub();
   }, []);
 
-  const loadMessages = useCallback(async (tokenOverride, { quiet = false } = {}) => {
+  const loadMessages = useCallback(async (tokenOverride, { quiet = false, typeId } = {}) => {
     const token = tokenOverride || idToken;
-    if (!token) {
+    const scopedTypeId = String(typeId || activeThreadTypeId || '').trim();
+    if (!token || emailVerificationPending) {
       setMessages([]);
       return;
     }
-    setLoadingMessages(true);
+    const requestId = loadMessagesRequestRef.current + 1;
+    loadMessagesRequestRef.current = requestId;
+    if (!quiet) {
+      setLoadingMessages(true);
+      setMessages([]);
+    }
     try {
-      const res = await fetch(apiUrl('/api/consult/my-messages?limit=60'), {
+      const qs = new URLSearchParams({ limit: '60' });
+      if (scopedTypeId) qs.set('type_id', scopedTypeId);
+      const res = await fetch(apiUrl(`/api/consult/my-messages?${qs.toString()}`), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const apiError = await parseApiError(res);
+        if (res.status === 403 && /verify your email/i.test(apiError)) {
+          setMessages([]);
+          setIdToken('');
+          setPaymentUnlocked(false);
+          setPaymentSessionId('');
+          setPaymentSessionStatus('');
+          setPaymentNotice('');
+          setPaymentQrSrc(PAYMENT_QR_SRC);
+          setPaymentUpiIntent('');
+          setPaymentCapabilitiesLoaded(false);
+          setAuthMode('login');
+          setAuthError(apiError);
+          setAuthNotice('Check your inbox/spam, verify your email, then log in again.');
+          setSendNotice('');
+          await signOut(firebaseAuth).catch(() => {});
+          return;
+        }
+        throw new Error(apiError);
+      }
+      const payload = await res.json();
+      if (requestId !== loadMessagesRequestRef.current) return;
+      setMessages(payload?.data || []);
+    } catch (err) {
+      if (requestId !== loadMessagesRequestRef.current) return;
+      if (!quiet) setSendError(err.message || 'Failed to load your consult history.');
+    } finally {
+      if (!quiet && requestId === loadMessagesRequestRef.current) {
+        setLoadingMessages(false);
+      }
+    }
+  }, [idToken, emailVerificationPending, activeThreadTypeId]);
+
+  const loadPaymentCapabilities = useCallback(async (tokenOverride) => {
+    const token = tokenOverride || idToken;
+    if (!token) {
+      setPaymentCapabilities(DEFAULT_PAYMENT_CAPABILITIES);
+      setPaymentCapabilitiesLoaded(false);
+      return;
+    }
+    setPaymentCapabilitiesLoaded(false);
+    try {
+      const res = await fetch(apiUrl('/api/consult/payments/capabilities'), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(await parseApiError(res));
       const payload = await res.json();
-      setMessages(payload?.data || []);
-    } catch (err) {
-      if (!quiet) setSendError(err.message || 'Failed to load your consult history.');
+      setPaymentCapabilities({ ...DEFAULT_PAYMENT_CAPABILITIES, ...(payload || {}) });
+    } catch {
+      setPaymentCapabilities(DEFAULT_PAYMENT_CAPABILITIES);
     } finally {
-      setLoadingMessages(false);
+      setPaymentCapabilitiesLoaded(true);
     }
   }, [idToken]);
 
   useEffect(() => {
-    if (!idToken) {
+    if (!idToken || emailVerificationPending) {
       setMessages([]);
       return;
     }
-    loadMessages(idToken);
-  }, [idToken, loadMessages]);
+    loadMessages(idToken, { typeId: activeThreadTypeId });
+  }, [idToken, emailVerificationPending, activeThreadTypeId, loadMessages]);
 
   useEffect(() => {
-    if (!idToken) return undefined;
+    if (!idToken || emailVerificationPending) {
+      setPaymentCapabilities(DEFAULT_PAYMENT_CAPABILITIES);
+      setPaymentCapabilitiesLoaded(false);
+      return;
+    }
+    loadPaymentCapabilities(idToken);
+  }, [idToken, emailVerificationPending, loadPaymentCapabilities]);
+
+  useEffect(() => {
+    if (!idToken || emailVerificationPending) return undefined;
     const timer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      loadMessages(idToken, { quiet: true });
+      loadMessages(idToken, { quiet: true, typeId: activeThreadTypeId });
     }, 9000);
     return () => clearInterval(timer);
-  }, [idToken, loadMessages]);
+  }, [idToken, emailVerificationPending, activeThreadTypeId, loadMessages]);
 
   const onGoogleAuth = async () => {
     if (!firebaseConfigured || !firebaseAuth || !firebaseGoogleProvider) return;
     setAuthLoading(true);
     setAuthError('');
+    setAuthNotice('');
     try {
       const cred = await signInWithPopup(firebaseAuth, firebaseGoogleProvider);
       const token = await getIdToken(cred.user, true);
       setIdToken(token);
       setAuthUser(cred.user);
-      await loadMessages(token);
-      setSendNotice('Sign-in successful. Complete payment and verify the UTR to unlock one message.');
+      await loadMessages(token, { typeId: activeThreadTypeId });
+      setSendNotice('Sign-in successful. Complete payment to unlock one message automatically.');
     } catch (err) {
       setAuthError(humanizeAuthError(err, 'Google sign-in failed.'));
     } finally {
@@ -396,27 +584,122 @@ export default function InstantConsult() {
   const onEmailAuth = async (event) => {
     event.preventDefault();
     if (!firebaseConfigured || !firebaseAuth) return;
+    const email = authForm.email.trim().toLowerCase();
+    const actionSettings = buildVerificationActionSettings();
+
     setAuthLoading(true);
     setAuthError('');
+    setAuthNotice('');
     try {
       let userCred;
       if (authMode === 'signup') {
-        userCred = await createUserWithEmailAndPassword(firebaseAuth, authForm.email.trim(), authForm.password);
+        userCred = await createUserWithEmailAndPassword(firebaseAuth, email, authForm.password);
         if (authForm.name.trim()) {
           await updateProfile(userCred.user, { displayName: authForm.name.trim() });
         }
+
+        let verificationSent = false;
+        let verificationError = '';
+        try {
+          await sendEmailVerification(userCred.user, actionSettings);
+          verificationSent = true;
+        } catch (verificationErr) {
+          verificationError = humanizeAuthError(verificationErr, 'Could not send verification email right now.');
+        } finally {
+          await signOut(firebaseAuth).catch(() => {});
+        }
+
+        setAuthUser(null);
+        setIdToken('');
+        setMessages([]);
+        setAuthMode('login');
+        setAuthForm((prev) => ({ ...prev, password: '' }));
+        if (verificationSent) {
+          setAuthNotice(`Verification link sent to ${email}. Verify your email, then log in.`);
+          setSendNotice('Account created. Please verify your email from the inbox link before login.');
+        } else {
+          setAuthError('Account created, but verification email could not be sent automatically.');
+          setAuthNotice(`${verificationError} Check Firebase Auth email template/domain settings, then try Login again.`);
+          setSendNotice('');
+        }
+        return;
       } else {
-        userCred = await signInWithEmailAndPassword(firebaseAuth, authForm.email.trim(), authForm.password);
+        userCred = await signInWithEmailAndPassword(firebaseAuth, email, authForm.password);
+        if (!userCred.user.emailVerified) {
+          let resent = false;
+          let resendError = '';
+          try {
+            await sendEmailVerification(userCred.user, actionSettings);
+            resent = true;
+          } catch (resendErr) {
+            resendError = humanizeAuthError(resendErr, 'Could not resend verification email right now.');
+          }
+          await signOut(firebaseAuth);
+          setAuthUser(null);
+          setIdToken('');
+          setMessages([]);
+          setAuthError('Please verify your email before login.');
+          setAuthNotice(
+            resent
+              ? `A fresh verification link was sent to ${email}.`
+              : `${resendError} Check inbox/spam for an earlier verification email, then log in again.`,
+          );
+          return;
+        }
       }
+
       const token = await getIdToken(userCred.user, true);
       setIdToken(token);
       setAuthUser(userCred.user);
-      await loadMessages(token);
-      setSendNotice('Account ready. Complete payment and verify the UTR to unlock one message.');
+      await loadMessages(token, { typeId: activeThreadTypeId });
+      setAuthNotice('');
+      setSendNotice('Account ready. Complete payment to unlock one message automatically.');
     } catch (err) {
       setAuthError(humanizeAuthError(err, 'Authentication failed.'));
     } finally {
       setAuthLoading(false);
+    }
+  };
+
+  const resendVerification = async () => {
+    if (!firebaseConfigured || !firebaseAuth || authMode !== 'login') return;
+    if (resendLoading || resendCooldown > 0) return;
+
+    const email = authForm.email.trim().toLowerCase();
+    const password = authForm.password;
+    const actionSettings = buildVerificationActionSettings();
+    if (!email || !password) {
+      setAuthError('Enter the same email and password, then resend verification.');
+      return;
+    }
+
+    setResendLoading(true);
+    setAuthError('');
+    setAuthNotice('');
+
+    let tempSignedIn = false;
+    try {
+      const userCred = await signInWithEmailAndPassword(firebaseAuth, email, password);
+      tempSignedIn = true;
+
+      if (userCred.user.emailVerified) {
+        setAuthNotice('This email is already verified. You can log in now.');
+        return;
+      }
+
+      await sendEmailVerification(userCred.user, actionSettings);
+      setResendCooldown(60);
+      setAuthNotice(`Verification link sent to ${email}. Check inbox/spam and verify before login.`);
+    } catch (err) {
+      setAuthError(humanizeAuthError(err, 'Could not resend verification email right now.'));
+    } finally {
+      if (tempSignedIn) {
+        await signOut(firebaseAuth).catch(() => {});
+      }
+      setAuthUser(null);
+      setIdToken('');
+      setMessages([]);
+      setResendLoading(false);
     }
   };
 
@@ -427,57 +710,115 @@ export default function InstantConsult() {
     setIdToken('');
     setMessages([]);
     setPaymentUnlocked(false);
-    setPaymentClaimId('');
-    setPaymentReference('');
+    setPaymentSessionId('');
+    setPaymentSessionStatus('');
     setPaymentNotice('');
+    setPaymentQrSrc(PAYMENT_QR_SRC);
+    setPaymentUpiIntent('');
+    setPaymentCapabilities(DEFAULT_PAYMENT_CAPABILITIES);
+    setPaymentCapabilitiesLoaded(false);
     setQrModalOpen(false);
+    setAuthNotice('');
+    setResendCooldown(0);
+    setResendLoading(false);
     setSendNotice('');
   };
 
-  const unlockPayment = async () => {
-    if (!idToken || paymentVerifying) return;
+  const startAutomaticPayment = async () => {
+    if (!idToken || paymentStarting || paymentMode === 'blocked') return;
 
-    const ref = paymentReference.trim();
-    if (ref.length < 6) {
-      setPaymentNotice('Enter a valid payment reference (UTR / transaction ID).');
-      return;
-    }
-
-    setPaymentVerifying(true);
+    setPaymentStarting(true);
+    setPaymentUnlocked(false);
+    setPaymentSessionId('');
+    setPaymentSessionStatus('');
     setPaymentNotice('');
     setSendError('');
+
     try {
-      const res = await fetch(apiUrl('/api/consult/payments/claim'), {
+      const res = await fetch(apiUrl('/api/consult/payments/session'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({
-          payment_reference: ref,
-          payment_amount: INSTANT_FEE_AMOUNT,
-        }),
+        body: JSON.stringify({ payment_amount: INSTANT_FEE_AMOUNT }),
       });
       if (!res.ok) throw new Error(await parseApiError(res));
       const payload = await res.json();
-      const claim = payload?.data || {};
-      const approved = claim?.status === 'approved';
-      setPaymentClaimId(claim?.id || '');
-      setPaymentUnlocked(approved);
-      setPaymentNotice(
-        payload?.client_notice
-          || (approved
-            ? 'Payment verified. You can now send one Instant Consult message.'
-            : 'Payment reference submitted. It will unlock once admin verifies it.'),
-      );
+      const session = payload?.data || {};
+      const modeAuto = !!payload?.automation_enabled;
+
+      setPaymentCapabilities((prev) => ({
+        ...prev,
+        automation_enabled: modeAuto,
+        manual_claim_enabled: false,
+      }));
+      setPaymentSessionId(session?.id || '');
+      setPaymentSessionStatus(session?.status || 'awaiting_payment');
+      setPaymentUnlocked(session?.status === 'paid');
+      setPaymentQrSrc(resolveApiMediaSrc(session?.qr_src, PAYMENT_QR_SRC));
+      setPaymentUpiIntent(session?.upi_intent || '');
+
+      if (session?.status === 'paid') {
+        setPaymentNotice('Payment already confirmed. You can send one message now.');
+      } else if (modeAuto) {
+        setPaymentNotice(payload?.client_notice || 'Payment session started. Complete the payment — unlock happens automatically.');
+      } else {
+        setPaymentNotice('Automatic confirmation is not configured yet. Please contact support to complete payment setup.');
+      }
     } catch (err) {
-      setPaymentUnlocked(false);
-      setPaymentClaimId('');
-      setPaymentNotice(err.message || 'Could not verify payment reference.');
+      setPaymentNotice(err.message || 'Could not start payment session.');
     } finally {
-      setPaymentVerifying(false);
+      setPaymentStarting(false);
     }
   };
+
+  const refreshPaymentSession = useCallback(async (sessionId, tokenOverride) => {
+    const token = tokenOverride || idToken;
+    if (!sessionId || !token) return;
+
+    try {
+      const res = await fetch(apiUrl(`/api/consult/payments/session/${encodeURIComponent(sessionId)}`), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await parseApiError(res));
+      const payload = await res.json();
+      const session = payload?.data || {};
+      const status = session?.status || 'awaiting_payment';
+
+      setPaymentSessionStatus(status);
+      if (session?.qr_src) {
+        setPaymentQrSrc(resolveApiMediaSrc(session.qr_src, PAYMENT_QR_SRC));
+      }
+      if (session?.upi_intent) {
+        setPaymentUpiIntent(session.upi_intent);
+      }
+
+      if (status === 'paid') {
+        setPaymentUnlocked(true);
+        setPaymentNotice('Payment confirmed automatically. You can now send one message.');
+      } else if (status === 'consumed') {
+        setPaymentUnlocked(false);
+      } else if (status === 'failed' || status === 'expired') {
+        setPaymentUnlocked(false);
+        setPaymentSessionId('');
+        setPaymentNotice(status === 'expired' ? 'Payment session expired. Start a fresh payment.' : 'Payment failed. Start a fresh payment session.');
+      }
+    } catch (err) {
+      setPaymentNotice(err.message || 'Could not refresh payment status.');
+    }
+  }, [idToken]);
+
+  useEffect(() => {
+    if (!paymentSessionId || !idToken || paymentMode !== 'auto' || paymentUnlocked) return undefined;
+
+    refreshPaymentSession(paymentSessionId, idToken);
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      refreshPaymentSession(paymentSessionId, idToken);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [paymentSessionId, idToken, paymentMode, paymentUnlocked, refreshPaymentSession]);
 
   const startVoiceCapture = () => {
     if (listening) return;
@@ -516,7 +857,7 @@ export default function InstantConsult() {
 
   const submitMessage = async (event) => {
     event.preventDefault();
-    if (!idToken || !selectedType || sending) return;
+    if (!idToken || !activeThreadTypeId || sending) return;
 
     const question = draft.trim();
     if (question.length < 8) {
@@ -524,11 +865,15 @@ export default function InstantConsult() {
       return;
     }
     if (!paymentUnlocked) {
-      setSendError('Complete payment verification before sending your message.');
+      setSendError('Complete payment confirmation before sending your message.');
       return;
     }
-    if (!paymentClaimId) {
-      setSendError('Payment claim missing. Please verify payment reference again.');
+    if (paymentMode === 'auto' && !paymentSessionId) {
+      setSendError('Payment session missing. Start a new payment session.');
+      return;
+    }
+    if (paymentMode === 'blocked') {
+      setSendError('Automatic payment is not configured yet. Please contact support.');
       return;
     }
 
@@ -536,10 +881,7 @@ export default function InstantConsult() {
     setSendError('');
     setSendNotice('');
 
-    const resolvedTypeId =
-      typeSubmissionMode === 'legacy'
-        ? (selectedType.legacyTypeId || selectedType.id)
-        : selectedType.id;
+    const resolvedTypeId = activeThreadTypeId;
 
     try {
       const res = await fetch(apiUrl('/api/consult/messages'), {
@@ -551,8 +893,7 @@ export default function InstantConsult() {
         body: JSON.stringify({
           type_id: resolvedTypeId,
           question,
-          payment_reference: paymentReference.trim(),
-          payment_claim_id: paymentClaimId,
+          payment_session_id: paymentSessionId || undefined,
           payment_amount: INSTANT_FEE_AMOUNT,
         }),
       });
@@ -561,11 +902,13 @@ export default function InstantConsult() {
 
       setDraft('');
       setPaymentUnlocked(false);
-      setPaymentClaimId('');
-      setPaymentReference('');
-      setPaymentNotice('A fresh verified payment is required for the next message.');
+      setPaymentSessionId('');
+      setPaymentSessionStatus('');
+      setPaymentQrSrc(PAYMENT_QR_SRC);
+      setPaymentUpiIntent('');
+      setPaymentNotice('A fresh confirmed payment is required for the next message.');
       setSendNotice(payload.client_notice || WAIT_NOTICE);
-      await loadMessages();
+      await loadMessages(undefined, { typeId: activeThreadTypeId });
     } catch (err) {
       setSendError(err.message || 'Failed to send your consult message.');
     } finally {
@@ -573,10 +916,21 @@ export default function InstantConsult() {
     }
   };
 
-  const chatLocked = !authUser || !paymentUnlocked;
-  const lockPromptAction = !authUser ? nudgeSignup : nudgePayment;
-  const lockPromptLabel = !authUser ? 'Signup Required' : 'Payment Required';
-  const lockPromptHint = !authUser ? 'Tap to start signup' : 'Tap to complete payment';
+  const hasMessageHistory = messages.length > 0;
+  const chatSendLocked = !authUser || emailVerificationPending || !paymentUnlocked;
+  const chatOverlayLocked = chatSendLocked && !hasMessageHistory;
+  const lockPromptAction = !authUser
+    ? () => nudgeSignup('signup')
+    : emailVerificationPending
+      ? () => nudgeSignup('login')
+      : nudgePayment;
+  const lockPromptLabel = !authUser ? 'Signup Required' : emailVerificationPending ? 'Verify Email' : 'Payment Required';
+  const lockPromptHint = !authUser ? 'Tap to start signup' : emailVerificationPending ? 'Verify email to continue' : 'Tap to complete payment';
+  const composerLockTooltip = !authUser
+    ? 'Sign up to continue this service.'
+    : emailVerificationPending
+      ? 'Verify your email to continue this service.'
+      : 'Payment required to continue service.';
 
   return (
     <div style={{ background: 'var(--bg)' }}>
@@ -616,68 +970,9 @@ export default function InstantConsult() {
         </div>
       </section>
 
-      <section className="relative py-12 lg:py-14">
-        <div className="max-w-7xl mx-auto px-6 lg:px-12">
-          <div className="flex flex-wrap gap-2.5">
-            {types.map((type) => {
-              const active = type.id === selectedType?.id;
-              return (
-                <button
-                  key={type.id}
-                  type="button"
-                  onClick={() => setSelectedTypeId(type.id)}
-                  className="px-4 py-2.5 rounded-full text-[11px] tracking-[0.2em] uppercase transition-all"
-                  style={{
-                    border: `1px solid ${active ? type.accent : 'var(--border2)'}`,
-                    background: active ? `${type.accent}20` : 'var(--bg-elev)',
-                    color: active ? type.accent : 'var(--fg2)',
-                  }}
-                >
-                  {type.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {selectedType && (
-            <motion.div
-              key={selectedType.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-              className="mt-7 rounded-2xl p-5 lg:p-7 relative overflow-hidden"
-              style={{ border: `1px solid ${selectedType.accent}55`, background: 'var(--bg-elev)' }}
-            >
-              <div className="absolute -top-14 -right-14 w-40 h-40 rounded-full" style={{ background: `${selectedType.accent}1f` }} />
-              <h2 className="hero-display text-3xl lg:text-4xl relative" style={{ color: 'var(--fg)' }}>{selectedType.label}</h2>
-              <p
-                className="mt-4 inline-flex items-center rounded-full px-3.5 py-1.5 text-[11px]"
-                style={{ background: `${selectedType.accent}22`, border: `1px solid ${selectedType.accent}77`, color: 'var(--fg2)' }}
-              >
-                {selectedType.description}
-              </p>
-
-              <div className="mt-6 grid md:grid-cols-2 gap-4 relative">
-                {(selectedType.images || []).slice(0, 2).map((img) => (
-                  <div key={`${selectedType.id}-${img.place}`} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
-                    <div className="aspect-[16/9] relative">
-                      <img src={img.src} alt={img.place} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(8,11,18,0.7), transparent 64%)' }} />
-                      <p className="absolute left-3 bottom-3 text-[10px] tracking-[0.22em] uppercase" style={{ color: '#fff' }}>
-                        {img.place} · Indicative
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </div>
-      </section>
-
-      <section className="pb-20 lg:pb-28">
-        <div className="max-w-7xl mx-auto px-6 lg:px-12 grid lg:grid-cols-5 gap-6 lg:gap-8 items-start">
-          <div className="lg:col-span-2 space-y-4">
+      <section className="pt-6 pb-20 lg:pt-8 lg:pb-28">
+        <div className="max-w-7xl mx-auto px-6 lg:px-12 space-y-6 lg:space-y-7">
+          <div className="space-y-4 max-w-3xl mx-auto">
             {!firebaseConfigured ? (
               <div className="rounded-2xl p-5" style={{ border: '1px solid rgba(224,106,106,0.4)', background: 'rgba(224,106,106,0.08)' }}>
                 <p className="text-sm" style={{ color: 'var(--fg)' }}>Instant Consult auth is not configured yet.</p>
@@ -686,89 +981,46 @@ export default function InstantConsult() {
                 </p>
               </div>
             ) : !authUser ? (
-              <div ref={onboardingCardRef} className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
+              <div className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
                 <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Onboarding</p>
-                <h3 className="text-2xl mt-2" style={{ color: 'var(--fg)' }}>Sign up to unlock Instant Consult</h3>
-                <div className="mt-4 flex gap-2">
-                  {['signup', 'login'].map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => { setAuthMode(mode); setAuthError(''); }}
-                      className="px-3 py-2 rounded-lg text-[11px] tracking-[0.2em] uppercase"
-                      style={{
-                        border: '1px solid var(--border2)',
-                        background: authMode === mode ? 'var(--accent-soft)' : 'transparent',
-                        color: authMode === mode ? 'var(--accent-text)' : 'var(--fg2)',
-                      }}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-
-                <form className="mt-4 space-y-3" onSubmit={onEmailAuth}>
-                  {authMode === 'signup' && (
-                    <div>
-                      <label className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Full name</label>
-                      <input
-                        value={authForm.name}
-                        onChange={(e) => setAuthForm((prev) => ({ ...prev, name: e.target.value }))}
-                        className="w-full mt-1 bg-transparent border-0 outline-none text-sm pb-2"
-                        style={{ color: 'var(--fg)', borderBottom: '1px solid var(--border2)' }}
-                        placeholder="Your name"
-                      />
-                    </div>
-                  )}
-                  <div>
-                    <label className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Email</label>
-                    <input
-                      value={authForm.email}
-                      onChange={(e) => setAuthForm((prev) => ({ ...prev, email: e.target.value }))}
-                      type="email"
-                      required
-                      className="w-full mt-1 bg-transparent border-0 outline-none text-sm pb-2"
-                      style={{ color: 'var(--fg)', borderBottom: '1px solid var(--border2)' }}
-                      placeholder="you@email.com"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Password</label>
-                    <input
-                      value={authForm.password}
-                      onChange={(e) => setAuthForm((prev) => ({ ...prev, password: e.target.value }))}
-                      type="password"
-                      required
-                      className="w-full mt-1 bg-transparent border-0 outline-none text-sm pb-2"
-                      style={{ color: 'var(--fg)', borderBottom: '1px solid var(--border2)' }}
-                      placeholder="Minimum 6 characters"
-                    />
-                  </div>
+                <h3 className="text-2xl mt-2" style={{ color: 'var(--fg)' }}>Sign up or login to unlock Instant Consult</h3>
+                <p className="mt-2 text-xs" style={{ color: 'var(--fg2)' }}>
+                  Authentication now lives on a dedicated page for a cleaner consult experience.
+                </p>
+                <div className="mt-4 flex gap-2 flex-wrap">
                   <button
-                    type="submit"
-                    disabled={authLoading}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-[11px] tracking-[0.22em] uppercase"
+                    type="button"
+                    onClick={() => nudgeSignup('signup')}
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] tracking-[0.2em] uppercase"
                     style={{ background: 'var(--accent)', color: '#fff' }}
                   >
-                    {authLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2} />}
-                    {authMode === 'signup' ? 'Create account' : 'Login'}
+                    Sign up
                   </button>
-                </form>
-
+                  <button
+                    type="button"
+                    onClick={() => nudgeSignup('login')}
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] tracking-[0.2em] uppercase"
+                    style={{ border: '1px solid var(--border2)', color: 'var(--fg2)', background: 'var(--bg)' }}
+                  >
+                    Login
+                  </button>
+                </div>
+              </div>
+            ) : emailVerificationPending ? (
+              <div className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--special-border)', background: 'var(--special-bg)' }}>
+                <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Email verification required</p>
+                <h3 className="text-xl mt-2" style={{ color: 'var(--fg)' }}>Verify {authUser?.email || 'your email'} first</h3>
+                <p className="mt-2 text-xs" style={{ color: 'var(--fg2)' }}>
+                  Open the verification link from your inbox/spam, then log in from the auth page.
+                </p>
                 <button
                   type="button"
-                  onClick={onGoogleAuth}
-                  disabled={authLoading}
-                  className="w-full mt-3 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-[11px] tracking-[0.18em] uppercase"
-                  style={{ border: '1px solid var(--border2)', color: 'var(--fg2)', background: 'var(--bg)' }}
+                  onClick={() => nudgeSignup('login')}
+                  className="mt-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] tracking-[0.2em] uppercase"
+                  style={{ border: '1px solid var(--special-border)', color: 'var(--special-accent)', background: 'var(--bg)' }}
                 >
-                  <Mail className="w-3.5 h-3.5" strokeWidth={1.9} />
-                  Continue with Google
+                  Go to login
                 </button>
-
-                {authError && (
-                  <p className="mt-3 text-xs" style={{ color: '#E08A6F' }}>{authError}</p>
-                )}
               </div>
             ) : (
               <div ref={paymentCardRef} className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
@@ -789,21 +1041,22 @@ export default function InstantConsult() {
                   </button>
                 </div>
 
-                <div className="mt-4 rounded-xl p-4" style={{ border: '1px solid var(--border2)', background: '#fff' }}>
+                <div className="mt-4 rounded-xl p-4" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: '#5b6b85' }}>Pay with Paytm</span>
-                    <span className="text-sm font-semibold" style={{ color: '#002E6E' }}>{INSTANT_FEE_LABEL}</span>
+                    <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Pay with Paytm</span>
+                    <span className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>{INSTANT_FEE_LABEL}</span>
                   </div>
                   <div className="mt-3 flex justify-center">
                     <div
-                      className="rounded-lg overflow-hidden w-full"
+                      className="rounded-lg overflow-hidden w-full p-2"
                       style={{
-                        border: '1px solid rgba(0,46,110,0.22)',
+                        border: '1px solid var(--border2)',
+                        background: '#fff',
                         maxWidth: 'min(84vw, 320px)',
                       }}
                     >
                       <img
-                        src={PAYMENT_QR_SRC}
+                        src={paymentQrSrc}
                         alt="Instant consult Paytm QR"
                         className="block w-full h-auto aspect-square object-contain"
                       />
@@ -814,7 +1067,7 @@ export default function InstantConsult() {
                       type="button"
                       onClick={() => setQrModalOpen(true)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] tracking-[0.18em] uppercase"
-                      style={{ border: '1px solid rgba(0,46,110,0.35)', color: '#002E6E' }}
+                      style={{ border: '1px solid var(--border2)', color: 'var(--fg2)', background: 'var(--bg-elev)' }}
                     >
                       <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.8} />
                       Tap for full-size QR
@@ -823,46 +1076,167 @@ export default function InstantConsult() {
                 </div>
 
                 <div className="mt-4">
-                  <label className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Payment reference (UTR / Txn ID)</label>
-                  <input
-                    value={paymentReference}
-                    onChange={(e) => {
-                      setPaymentReference(e.target.value);
-                      setPaymentUnlocked(false);
-                      setPaymentClaimId('');
-                      setPaymentNotice('');
-                    }}
-                    placeholder="e.g. T202604..."
-                    className="w-full mt-1 bg-transparent border-0 outline-none text-sm pb-2"
-                    style={{ color: 'var(--fg)', borderBottom: '1px solid var(--border2)' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={unlockPayment}
-                    disabled={paymentVerifying}
-                    className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] tracking-[0.2em] uppercase"
-                    style={{ border: `1px solid ${paymentUnlocked ? '#63E6A8' : 'var(--special-border)'}`, color: paymentUnlocked ? '#63E6A8' : 'var(--special-accent)', opacity: paymentVerifying ? 0.8 : 1 }}
-                  >
-                    {paymentVerifying
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} />
-                      : paymentUnlocked
-                        ? <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2} />
-                        : <WalletCards className="w-3.5 h-3.5" strokeWidth={1.8} />}
-                    {paymentVerifying ? 'Verifying...' : paymentUnlocked ? 'Verified for one message' : 'Submit payment reference'}
-                  </button>
+                  {!paymentCapabilitiesLoaded ? (
+                    <p className="text-xs" style={{ color: 'var(--fg2)' }}>Checking payment mode…</p>
+                  ) : paymentMode === 'auto' ? (
+                    <>
+                      <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>
+                        Automatic payment confirmation
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={startAutomaticPayment}
+                          disabled={paymentStarting}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] tracking-[0.2em] uppercase"
+                          style={{
+                            border: paymentUnlocked ? '1px solid var(--status-done-border)' : '1px solid var(--special-border)',
+                            color: paymentUnlocked ? 'var(--status-success-fg)' : 'var(--special-accent)',
+                            opacity: paymentStarting ? 0.82 : 1,
+                          }}
+                        >
+                          {paymentStarting
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} />
+                            : paymentUnlocked
+                              ? <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2} />
+                              : <WalletCards className="w-3.5 h-3.5" strokeWidth={1.8} />}
+                          {paymentStarting ? 'Starting...' : paymentUnlocked ? 'Confirmed for one message' : 'Start secure payment'}
+                        </button>
+
+                        {paymentSessionId && !paymentUnlocked && (
+                          <button
+                            type="button"
+                            onClick={() => refreshPaymentSession(paymentSessionId)}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[10px] tracking-[0.18em] uppercase"
+                            style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
+                          >
+                            <Clock3 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                            Check status
+                          </button>
+                        )}
+
+                        {paymentUpiIntent && (
+                          <a
+                            href={paymentUpiIntent}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[10px] tracking-[0.18em] uppercase"
+                            style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
+                          >
+                            <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={1.8} />
+                            Open UPI app
+                          </a>
+                        )}
+                      </div>
+                      {!!paymentSessionStatus && (
+                        <p className="mt-2 text-[11px] uppercase tracking-[0.17em]" style={{ color: 'var(--fg3)' }}>
+                          Session status: {paymentSessionStatus.replace(/_/g, ' ')}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs" style={{ color: 'var(--fg2)' }}>
+                      Automatic payment confirmation is not configured. Please contact support to enable gateway webhooks.
+                    </p>
+                  )}
+
                   {paymentNotice && (
-                    <p className="mt-2 text-xs" style={{ color: paymentUnlocked ? '#63E6A8' : 'var(--fg2)' }}>{paymentNotice}</p>
+                    <p className="mt-2 text-xs" style={{ color: paymentUnlocked ? 'var(--status-success-fg)' : 'var(--fg2)' }}>{paymentNotice}</p>
                   )}
                 </div>
               </div>
             )}
           </div>
 
-          <div className="lg:col-span-3 rounded-2xl overflow-hidden relative" style={{ border: `1px solid ${selectedType?.accent || 'var(--border2)'}`, background: 'var(--bg-elev)' }}>
+          <div>
+            <div
+              className="inline-flex items-center gap-2 rounded-full p-1"
+              style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}
+            >
+              {CONSULT_SELECTION_TABS.map((tab) => {
+                const active = consultSelectionTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setConsultSelectionTab(tab.id)}
+                    className="px-4 py-2 rounded-full text-[10px] tracking-[0.2em] uppercase transition-all"
+                    style={{
+                      border: `1px solid ${active ? 'var(--special-border)' : 'transparent'}`,
+                      background: active ? 'var(--special-bg)' : 'transparent',
+                      color: active ? 'var(--special-accent)' : 'var(--fg2)',
+                    }}
+                    aria-pressed={active}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {showConsultTypePicker && (
+              <div className="mt-5 flex flex-wrap gap-2.5">
+                {types.map((type) => {
+                  const active = type.id === selectedType?.id;
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => setSelectedTypeId(type.id)}
+                      className="px-4 py-2.5 rounded-full text-[11px] tracking-[0.2em] uppercase transition-all"
+                      style={{
+                        border: `1px solid ${active ? type.accent : 'var(--border2)'}`,
+                        background: active ? `${type.accent}20` : 'var(--bg-elev)',
+                        color: active ? type.accent : 'var(--fg2)',
+                      }}
+                    >
+                      {type.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {!isAutoConsult && selectedType && (
+              <motion.div
+                key={selectedType.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className={`${showConsultTypePicker ? 'mt-7' : 'mt-5'} rounded-2xl p-5 lg:p-7 relative overflow-hidden`}
+                style={{ border: `1px solid ${selectedType.accent}55`, background: 'var(--bg-elev)' }}
+              >
+                <div className="absolute -top-14 -right-14 w-40 h-40 rounded-full" style={{ background: `${selectedType.accent}1f` }} />
+                <h2 className="hero-display text-3xl lg:text-4xl relative" style={{ color: 'var(--fg)' }}>{selectedType.label}</h2>
+                <p
+                  className="mt-4 inline-flex items-center rounded-full px-3.5 py-1.5 text-[11px]"
+                  style={{ background: `${selectedType.accent}22`, border: `1px solid ${selectedType.accent}77`, color: 'var(--fg2)' }}
+                >
+                  {selectedType.description}
+                </p>
+
+                <div className="mt-6 grid md:grid-cols-2 gap-4 relative">
+                  {(selectedType.images || []).slice(0, 2).map((img) => (
+                    <div key={`${selectedType.id}-${img.place}`} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
+                      <div className="aspect-[16/9] relative">
+                        <img src={img.src} alt={img.place} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(8,11,18,0.7), transparent 64%)' }} />
+                        <p className="absolute left-3 bottom-3 text-[10px] tracking-[0.22em] uppercase" style={{ color: '#fff' }}>
+                          {img.place} · Indicative
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </div>
+
+          <div className="rounded-2xl overflow-hidden relative" style={{ border: `1px solid ${consultAccent}66`, background: 'var(--bg-elev)' }}>
             <div className="px-5 lg:px-6 py-4 flex items-center justify-between gap-4" style={{ borderBottom: '1px solid var(--border)' }}>
               <div>
                 <p className="text-[10px] tracking-[0.22em] uppercase" style={{ color: 'var(--fg3)' }}>Instant Consult DM</p>
-                <p className="text-sm mt-1" style={{ color: 'var(--fg)' }}>{selectedType?.label || 'Select a consult type'}</p>
+                <p className="text-sm mt-1" style={{ color: 'var(--fg)' }}>{chatHeading}</p>
               </div>
               <span className="text-[10px] tracking-[0.2em] uppercase px-3 py-1 rounded-full" style={{ background: `${consultAccent}1c`, border: `1px solid ${consultAccent}66`, color: consultAccent }}>
                 {INSTANT_FEE_LABEL} / message
@@ -870,17 +1244,19 @@ export default function InstantConsult() {
             </div>
 
             <div className="relative">
-              <div className={`${chatLocked ? 'blur-[2px] pointer-events-none select-none' : ''}`}>
+              <div className={`${chatOverlayLocked ? 'blur-[2px] pointer-events-none select-none' : ''}`}>
                 <div className="h-[360px] lg:h-[430px] overflow-y-auto px-4 lg:px-5 py-4 space-y-3" style={{ background: 'var(--bg)' }}>
-                  {loadingMessages ? (
-                    <div className="h-full flex items-center justify-center">
-                      <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--fg3)' }} />
-                    </div>
-                  ) : messages.length ? (
-                    messages.map((msg) => {
-                      const pill = statusPill(msg.status);
-                      return (
-                        <div key={msg.id} className="space-y-2">
+                  {messages.length ? (
+                    <>
+                      {loadingMessages && (
+                        <div className="flex justify-center pb-1">
+                          <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--fg3)' }} />
+                        </div>
+                      )}
+                      {messages.map((msg) => {
+                        const pill = statusPill(msg.status);
+                        return (
+                          <div key={msg.id} className="space-y-2.5">
                           <div className="flex justify-end">
                             <div
                               className="max-w-[88%] rounded-2xl rounded-br-md px-4 py-3"
@@ -889,33 +1265,33 @@ export default function InstantConsult() {
                               <p className="text-sm font-light leading-relaxed whitespace-pre-wrap">{msg.question}</p>
                             </div>
                           </div>
-                          <div className="flex justify-start">
-                            <div className="max-w-[88%] rounded-2xl rounded-bl-md px-3.5 py-2.5" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[10px] tracking-[0.18em] uppercase px-2 py-1 rounded-full" style={pill.style}>
-                                  {pill.label}
-                                </span>
-                                <span className="text-[11px]" style={{ color: 'var(--fg2)' }}>{formatTs(msg.created_at)}</span>
-                              </div>
-                              <p className="text-xs mt-2" style={{ color: 'var(--fg2)' }}>
-                                {msg.admin_reply?.text
-                                  ? 'Admin reply delivered below.'
-                                  : msg.status === 'done'
-                                    ? 'Your response is ready. Please check your channel updates from our team.'
-                                    : WAIT_NOTICE}
-                              </p>
-                            </div>
-                          </div>
 
-                          {msg.admin_reply?.text && (
+                          {msg.admin_reply?.text ? (
                             <div className="flex justify-start">
-                              <div className="max-w-[90%] rounded-2xl rounded-bl-md px-3.5 py-3" style={{ border: `1px solid ${consultAccent}66`, background: `${consultAccent}1a` }}>
-                                <p className="text-[11px] tracking-[0.18em] uppercase" style={{ color: consultAccent }}>Vartika's Reply</p>
-                                <p className="mt-2 text-sm font-light leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--fg)' }}>
+                              <div
+                                className="max-w-[92%] rounded-2xl rounded-bl-md px-4 py-3.5 relative overflow-hidden"
+                                style={{ border: `1px solid ${consultAccent}77`, background: `linear-gradient(140deg, ${consultAccent}24 0%, var(--bg-elev) 56%)` }}
+                              >
+                                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full" style={{ background: `${consultAccent}22` }} />
+                                <div className="relative flex items-center gap-2 flex-wrap">
+                                  <span
+                                    className="text-[10px] tracking-[0.2em] uppercase px-2.5 py-1 rounded-full"
+                                    style={{ border: `1px solid ${consultAccent}66`, color: consultAccent, background: `${consultAccent}14` }}
+                                  >
+                                    Vartika
+                                  </span>
+                                  <span className="text-[10px] tracking-[0.18em] uppercase px-2 py-1 rounded-full" style={pill.style}>
+                                    {pill.label}
+                                  </span>
+                                  <span className="text-[11px]" style={{ color: 'var(--fg2)' }}>
+                                    {formatTs(msg.admin_reply.replied_at || msg.updated_at || msg.created_at)}
+                                  </span>
+                                </div>
+                                <p className="relative mt-2.5 text-sm font-light leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--fg)' }}>
                                   {msg.admin_reply.text}
                                 </p>
                                 {!!msg.admin_reply.images?.length && (
-                                  <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                  <div className="relative mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
                                     {msg.admin_reply.images.filter((img) => img.url).map((img, idx) => (
                                       <a
                                         key={`${msg.id}-reply-image-${idx}`}
@@ -930,15 +1306,36 @@ export default function InstantConsult() {
                                     ))}
                                   </div>
                                 )}
-                                <p className="mt-2 text-[11px]" style={{ color: 'var(--fg2)' }}>
-                                  {formatTs(msg.admin_reply.replied_at)}
+                                <p className="relative mt-2 text-[11px] tracking-[0.16em] uppercase" style={{ color: 'var(--fg3)' }}>
+                                  — Vartika Shukla
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex justify-start">
+                              <div className="max-w-[88%] rounded-2xl rounded-bl-md px-3.5 py-2.5" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-[10px] tracking-[0.18em] uppercase px-2 py-1 rounded-full" style={pill.style}>
+                                    {pill.label}
+                                  </span>
+                                  <span className="text-[11px]" style={{ color: 'var(--fg2)' }}>{formatTs(msg.created_at)}</span>
+                                </div>
+                                <p className="text-xs mt-2" style={{ color: 'var(--fg2)' }}>
+                                  {msg.status === 'done'
+                                    ? 'Your response is ready. Please check your channel updates from our team.'
+                                    : WAIT_NOTICE}
                                 </p>
                               </div>
                             </div>
                           )}
-                        </div>
-                      );
-                    })
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : loadingMessages ? (
+                    <div className="h-full flex items-center justify-center">
+                      <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--fg3)' }} />
+                    </div>
                   ) : (
                     <div className="h-full flex items-center justify-center px-6 text-center">
                       <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
@@ -948,50 +1345,75 @@ export default function InstantConsult() {
                   )}
                 </div>
 
-                <form onSubmit={submitMessage} className="px-4 lg:px-5 py-4" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-elev)' }}>
-                  <label className="text-[10px] tracking-[0.22em] uppercase" style={{ color: 'var(--fg3)' }}>
-                    Your Question
-                  </label>
-                  <textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    rows={3}
-                    placeholder="Type your question clearly. You may also use your device voice-to-text keyboard input."
-                    className="w-full mt-2 bg-transparent border-0 outline-none resize-none text-sm leading-relaxed"
-                    style={{ color: 'var(--fg)', borderBottom: '1px solid var(--border2)', paddingBottom: '10px' }}
-                    disabled={sending}
-                  />
-                  <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
-                    <p className="text-xs font-light" style={{ color: 'var(--fg3)' }}>
-                      Every sent DM requires a fresh {INSTANT_FEE_LABEL} payment.
-                    </p>
-                    <div className="inline-flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={startVoiceCapture}
-                        disabled={listening}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[10px] tracking-[0.18em] uppercase"
-                        style={{ border: '1px solid var(--border2)', color: listening ? 'var(--accent-text)' : 'var(--fg2)' }}
-                      >
-                        <Mic className="w-3.5 h-3.5" strokeWidth={1.8} />
-                        {listening ? 'Listening' : 'Voice'}
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={sending || !draft.trim()}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] tracking-[0.2em] uppercase"
-                        style={{ background: consultAccent, color: '#fff' }}
-                      >
-                        {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2} /> : <Send className="w-3.5 h-3.5" strokeWidth={1.9} />}
-                        Send DM
-                      </button>
+                <form
+                  onSubmit={submitMessage}
+                  className={`relative px-4 lg:px-5 py-4 ${chatSendLocked ? 'cursor-not-allowed' : ''}`}
+                  style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-elev)' }}
+                  aria-disabled={chatSendLocked}
+                >
+                  <div className={chatSendLocked ? 'pointer-events-none select-none' : ''}>
+                    <label className="text-[10px] tracking-[0.22em] uppercase" style={{ color: 'var(--fg3)' }}>
+                      Your Question
+                    </label>
+                    <textarea
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      rows={3}
+                      placeholder="Type your question clearly. You may also use your device voice-to-text keyboard input."
+                      className="w-full mt-2 bg-transparent border-0 outline-none resize-none text-sm leading-relaxed"
+                      style={{ color: 'var(--fg)', borderBottom: '1px solid var(--border2)', paddingBottom: '10px' }}
+                      disabled={sending || chatSendLocked}
+                    />
+                    <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                      <p className="text-xs font-light" style={{ color: 'var(--fg3)' }}>
+                        Every sent DM requires a fresh {INSTANT_FEE_LABEL} payment.
+                      </p>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={startVoiceCapture}
+                          disabled={listening || chatSendLocked}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[10px] tracking-[0.18em] uppercase"
+                          style={{ border: '1px solid var(--border2)', color: listening ? 'var(--accent-text)' : 'var(--fg2)' }}
+                        >
+                          <Mic className="w-3.5 h-3.5" strokeWidth={1.8} />
+                          {listening ? 'Listening' : 'Voice'}
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={sending || chatSendLocked || !draft.trim()}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] tracking-[0.2em] uppercase"
+                          style={{ background: consultAccent, color: '#fff', opacity: chatSendLocked ? 0.56 : 1 }}
+                        >
+                          {sending
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2} />
+                            : chatSendLocked
+                              ? <Lock className="w-3.5 h-3.5" strokeWidth={1.8} />
+                              : <Send className="w-3.5 h-3.5" strokeWidth={1.9} />}
+                          {sending ? 'Sending...' : chatSendLocked ? lockPromptLabel : 'Send DM'}
+                        </button>
+                      </div>
                     </div>
                   </div>
+
+                  {chatSendLocked && (
+                    <div
+                      className="group absolute inset-0 z-10"
+                      style={{ background: 'var(--overlay-soft)', backdropFilter: 'blur(1.5px)', cursor: 'not-allowed' }}
+                      title={composerLockTooltip}
+                      aria-label={composerLockTooltip}
+                    >
+                      <div className="absolute right-4 bottom-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] tracking-[0.12em] opacity-0 translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0" style={{ border: '1px solid var(--special-border)', background: 'var(--bg-elev)', color: 'var(--special-accent)' }}>
+                        <Lock className="w-3 h-3" strokeWidth={1.8} />
+                        {composerLockTooltip}
+                      </div>
+                    </div>
+                  )}
                 </form>
               </div>
 
               <AnimatePresence>
-                {chatLocked && (
+                {chatOverlayLocked && (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -1061,25 +1483,25 @@ export default function InstantConsult() {
               exit={{ opacity: 0, y: 12, scale: 0.96 }}
               transition={{ duration: 0.22 }}
               className="w-full max-w-[480px] rounded-2xl p-4"
-              style={{ background: '#fff', border: '1px solid rgba(0,46,110,0.22)' }}
+              style={{ background: 'var(--bg-elev)', border: '1px solid var(--border2)' }}
             >
               <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] tracking-[0.2em] uppercase" style={{ color: '#5b6b85' }}>Paytm QR · {INSTANT_FEE_LABEL}</p>
+                <p className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Paytm QR · {INSTANT_FEE_LABEL}</p>
                 <button
                   type="button"
                   onClick={() => setQrModalOpen(false)}
                   className="w-8 h-8 rounded-full inline-flex items-center justify-center"
-                  style={{ border: '1px solid rgba(0,46,110,0.18)', color: '#002E6E' }}
+                  style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
                   aria-label="Close QR preview"
                 >
                   <X className="w-4 h-4" strokeWidth={1.9} />
                 </button>
               </div>
-              <div className="mt-3 rounded-lg overflow-hidden" style={{ border: '1px solid rgba(0,46,110,0.2)' }}>
-                <img src={PAYMENT_QR_SRC} alt="Full size Instant consult Paytm QR" className="block w-full h-auto" />
+              <div className="mt-3 rounded-lg overflow-hidden p-2" style={{ border: '1px solid var(--border2)', background: '#fff' }}>
+                <img src={paymentQrSrc} alt="Full size Instant consult Paytm QR" className="block w-full h-auto" />
               </div>
-              <p className="mt-3 text-xs" style={{ color: '#43556f' }}>
-                Keep your screen brightness high while scanning. Enter the exact UTR after payment.
+              <p className="mt-3 text-xs" style={{ color: 'var(--fg2)' }}>
+                Keep your screen brightness high while scanning. Unlock happens automatically after payment confirmation.
               </p>
             </motion.div>
           </motion.div>

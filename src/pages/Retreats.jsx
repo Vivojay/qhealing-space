@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useRef } from 'react';
+import React, { useRef } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Clock, MapPin } from 'lucide-react';
@@ -11,8 +11,6 @@ import textureMaxim from '../../attached_assets/textures/maxim-berg-ANuuRuCRRAc-
 import textureResource from '../../attached_assets/textures/resource-database-gRZWo4Km1A8-unsplash.jpg';
 import textureVadym from '../../attached_assets/textures/vadym-alyekseyenko-0ARnshcVqfc-unsplash.jpg';
 import textureImmo from '../../attached_assets/textures/immo-wegmann-R24Vq8RRxWU-unsplash.jpg';
-
-const RetreatsHeading3DPhysics = lazy(() => import('@/components/retreats/RetreatsHeading3DPhysics'));
 
 const SMOOTH = { duration: 0.6, ease: [0.16, 1, 0.3, 1] };
 const RETREAT_SECTION_BACKGROUNDS = [
@@ -150,15 +148,12 @@ export default function Retreats() {
               transition={{ duration: 1, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
               className="max-w-[780px]"
             >
-              <Suspense
-                fallback={
-                  <h1 className="hero-display text-6xl lg:text-[8rem]" style={{ color: '#fafaf9' }}>
-                    Retreats
-                  </h1>
-                }
-              >
-                <RetreatsHeading3DPhysics text="Retreats" />
-              </Suspense>
+              {/* 3D heading temporarily disabled for Retreats route.
+              <RetreatsHeading3DPhysics text="Retreats" />
+              */}
+              <h1 className="hero-display text-6xl lg:text-[8rem]" style={{ color: '#fafaf9' }}>
+                Retreats
+              </h1>
             </motion.div>
             <p className="mt-5 max-w-xl text-[14px] font-light leading-relaxed" style={{ color: 'rgba(250,250,249,0.65)' }}>
               Six guided immersions across India · 3 to 7 days each · single private call to plan your stay.

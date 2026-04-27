@@ -3,6 +3,7 @@ export function createPageUrl(page) {
     'Home': '/',
     'Services': '/services',
     'Instant Consult': '/instant-consult',
+    'Auth': '/auth',
     'Healings': '/healings',
     'Global Practices': '/global-practices',
     'Retreats': '/retreats',

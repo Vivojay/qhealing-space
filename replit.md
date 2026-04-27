@@ -21,7 +21,8 @@ Public endpoints:
 - `GET /api/instagram/reels?limit=N` — latest media for `INSTAGRAM_BUSINESS_ACCOUNT_ID` via Graph API. Cached 10 min. Respects admin curation if set.
 - `GET /api/config` — public site config (instagram handle, contact details, section toggles)
 - `POST /api/newsletter/subscribe` `{ email, source? }` — writes to Firestore `newsletter_subscribers` collection.
-- `GET /api/payments/upi-qr?amount=...` — returns UPI QR image (dynamic + cached; uses static overrides for known amounts)
+- `GET /api/payments/upi-qr/instant-consult` — fixed INR 1500 Instant Consult QR (supports optional `tr` reference)
+- `GET /api/payments/upi-qr/booking-consultation` — fixed INR 2500 booking QR
 - `GET /api/consult/types` — Instant Consult type metadata used by frontend type selector
 - `GET /api/consult/my-messages` (Firebase user bearer token)
 - `POST /api/consult/messages` (Firebase user bearer token) — queues paid Instant Consult message with default status `new`
@@ -45,6 +46,9 @@ Required environment secrets:
 - `ADMIN_TOKEN_SECRET` (optional) — extra HMAC pepper for admin tokens
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` (required for client/admin transactional email + token warning mail)
 - `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` (required for daily token-expiry warning checks via `debug_token`)
+- `INSTANT_PAYMENT_WEBHOOK_SECRET` (required for secure automatic Instant Consult payment confirmation webhook)
+- `INSTANT_PAYMENT_PROVIDER` (optional, default `paytm`) and `INSTANT_PAYMENT_SESSION_TTL_MINUTES` (optional, default 30)
+- `INSTANT_MANUAL_PAYMENT_CLAIM_ENABLED` (optional, default `1`; set `0` to disable UTR/admin fallback once webhook automation is live)
 - For scale/deliverability, migrate SMTP to a transactional provider (Resend/SendGrid/Postmark); note: admin alert recipient is currently hardcoded to `vartikashukla2000@yahoo.com` in `backend/main.py:69`.
 
 Frontend API target:

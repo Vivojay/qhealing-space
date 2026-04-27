@@ -20,6 +20,16 @@ const STATUS_OPTIONS = [
 
 const MAX_IMAGES = 10;
 
+function normalizeConsultTypeLabel(typeLabel, typeId) {
+  const label = String(typeLabel || '').trim();
+  const id = String(typeId || '').trim().toLowerCase();
+  if (!label && !id) return '';
+  const normalizedLabel = label.replace(/grabovo[iy]/gi, 'Grabovoi').trim();
+  if (normalizedLabel) return normalizedLabel;
+  if (id.startsWith('grabovo') && id.endsWith('-codes')) return 'Grabovoi Codes';
+  return typeId;
+}
+
 function statusTag(status) {
   const normalized = String(status || 'new').toLowerCase();
   if (normalized === 'done') {
@@ -76,6 +86,37 @@ export default function AdminInstantConsult() {
   const [replyNotice, setReplyNotice] = useState('');
   const [claimActionId, setClaimActionId] = useState('');
 
+  const replyFilePreviews = useMemo(() => (
+    replyFiles.map((file, idx) => ({
+      key: `${file.name}-${file.size}-${file.lastModified}-${idx}`,
+      url: URL.createObjectURL(file),
+      name: file.name,
+    }))
+  ), [replyFiles]);
+
+  useEffect(() => () => {
+    replyFilePreviews.forEach((preview) => {
+      URL.revokeObjectURL(preview.url);
+    });
+  }, [replyFilePreviews]);
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith('image/'));
+    if (!files.length) return;
+    const merged = [...replyFiles, ...files].slice(0, MAX_IMAGES);
+    setReplyFiles(merged);
+    if (merged.length < files.length + replyFiles.length) {
+      setReplyNotice(`Only the first ${MAX_IMAGES} images are kept.`);
+    }
+  };
+
   const load = useCallback(async ({ soft = false, quiet = false } = {}) => {
     if (soft) setRefreshing(true);
     else setLoading(true);
@@ -112,7 +153,15 @@ export default function AdminInstantConsult() {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((row) =>
-      [row.display_name, row.email, row.type_label, row.question, row.payment_reference, row.id, row.admin_reply?.text]
+      [
+        row.display_name,
+        row.email,
+        normalizeConsultTypeLabel(row.type_label, row.type_id),
+        row.question,
+        row.payment_reference,
+        row.id,
+        row.admin_reply?.text,
+      ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(q)),
     );
@@ -375,7 +424,7 @@ export default function AdminInstantConsult() {
                 <div className="mt-3 grid lg:grid-cols-[1.2fr_1fr] gap-3">
                   <div>
                     <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>
-                      {row.type_label || row.type_id}
+                      {normalizeConsultTypeLabel(row.type_label, row.type_id)}
                     </p>
                     <p className="mt-2 text-sm font-light leading-relaxed" style={{ color: 'var(--fg)' }}>{row.question}</p>
 
@@ -395,10 +444,15 @@ export default function AdminInstantConsult() {
                                   href={img.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="block rounded overflow-hidden"
+                                  className="group block rounded overflow-hidden"
                                   style={{ border: '1px solid var(--border2)' }}
+                                  title={img.name || `reply-${idx + 1}`}
                                 >
-                                  <img src={img.url} alt={img.name || `reply-${idx + 1}`} className="w-full h-24 object-cover" />
+                                  <img
+                                    src={img.url}
+                                    alt={img.name || `reply-${idx + 1}`}
+                                    className="w-full h-24 object-cover transition-transform duration-200 group-hover:scale-105"
+                                  />
                                 </a>
                               ) : (
                                 <div
@@ -467,21 +521,63 @@ export default function AdminInstantConsult() {
                           onChange={onPickFiles}
                         />
                       </label>
-                      {!!replyFiles.length && (
-                        <div className="flex flex-wrap gap-2">
-                          {replyFiles.map((file, idx) => (
-                            <button
-                              key={`${file.name}-${idx}`}
-                              type="button"
-                              onClick={() => removeReplyFile(idx)}
-                              className="px-2.5 py-1 rounded text-[10px]"
-                              style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
+                      {!!replyFilePreviews.length && (
+                        <div className="w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 mt-1">
+                          {replyFilePreviews.map((preview, idx) => (
+                            <div
+                              key={preview.key}
+                              className="group relative rounded overflow-hidden"
+                              style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}
                             >
-                              {file.name.length > 18 ? `${file.name.slice(0, 18)}...` : file.name} ×
-                            </button>
+                              <img
+                                src={preview.url}
+                                alt={preview.name || `upload-${idx + 1}`}
+                                className="w-full h-20 object-cover transition-transform duration-200 group-hover:scale-105"
+                              />
+                              <div
+                                className="absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] truncate"
+                                style={{ background: 'rgba(7, 10, 16, 0.62)', color: 'rgba(245, 246, 250, 0.88)' }}
+                                title={preview.name}
+                              >
+                                {preview.name}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeReplyFile(idx)}
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full text-[11px] leading-none inline-flex items-center justify-center"
+                                style={{ background: 'rgba(7, 10, 16, 0.72)', color: 'rgba(245,246,250,0.92)', border: '1px solid rgba(255,255,255,0.22)' }}
+                                aria-label={`Remove ${preview.name}`}
+                                title={`Remove ${preview.name}`}
+                              >
+                                ×
+                              </button>
+                            </div>
                           ))}
                         </div>
                       )}
+
+                      <div className="mt-3">
+                        <label
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-full text-[10px] tracking-[0.18em] uppercase cursor-pointer border border-dashed border-[var(--border2)] hover:bg-[var(--accent-dim)] transition-colors"
+                          onDragOver={handleDragOver}
+                          onDrop={handleDrop}
+                          style={{ minHeight: '64px', justifyContent: 'center', alignItems: 'center' }}
+                        >
+                          {replyFiles.length === 0 ? (
+                            <>
+                              <ImagePlus className="w-4 h-4" strokeWidth={1.5} />
+                              <span>Drop images here or click to select</span>
+                            </>
+                          ) : null}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={onPickFiles}
+                          />
+                        </label>
+                      </div>
                     </div>
 
                     <div className="mt-4 flex justify-end">

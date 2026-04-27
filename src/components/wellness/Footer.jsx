@@ -4,6 +4,15 @@ import { Instagram, Mail, MapPin, Phone, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import NewsletterSignup from './NewsletterSignup';
 
+function scrollToTopImmediate() {
+  if (typeof window === 'undefined') return;
+  if (window.__lenis && typeof window.__lenis.scrollTo === 'function') {
+    window.__lenis.scrollTo(0, { immediate: true });
+  } else {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }
+}
+
 export default function Footer() {
   return (
     <footer
@@ -59,43 +68,43 @@ export default function Footer() {
                 Individual Healings · Spiritual Workshops · Retreats · Corporate Interventions.
                 Guided by Vartika Shukla — healer, hypnotherapist, life coach.
               </p>
-              <div className="flex flex-wrap gap-2.5 mb-8">
-                {['By appointment', 'Private sessions', 'Online + In person'].map((item) => (
-                  <span
+              <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-8">
+                {['By appointment', 'Private sessions', 'Online + In person'].map((item, i) => (
+                  <li
                     key={item}
-                    className="text-[10px] uppercase tracking-[0.2em] px-3 py-1.5 rounded-full"
-                    style={{
-                      color: 'var(--accent-text)',
-                      border: '1px solid var(--accent-soft)',
-                      background: 'var(--accent-dim)',
-                    }}
+                    className="text-[10px] uppercase tracking-[0.2em]"
+                    style={{ color: 'var(--accent-text)' }}
                   >
+                    {i > 0 ? '· ' : ''}
                     {item}
-                  </span>
+                  </li>
                 ))}
+              </ul>
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  to={`/booking?service=${encodeURIComponent('Other / Not sure yet')}`}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-xs tracking-[0.25em] uppercase hover-accent"
+                  style={{
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    border: '1px solid var(--accent)',
+                  }}
+                >
+                  Book a session <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={2} />
+                </Link>
+                <Link
+                  to="/auth?mode=signup&next=%2Finstant-consult"
+                  onClick={scrollToTopImmediate}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full text-xs tracking-[0.2em] uppercase text-center hover-special"
+                  style={{
+                    border: '1px solid var(--special-border)',
+                    color: 'var(--special-accent)',
+                    background: 'var(--special-bg)',
+                  }}
+                >
+                  Instant Consult <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={2} />
+                </Link>
               </div>
-              <Link
-                to={`/booking?service=${encodeURIComponent('Other / Not sure yet')}`}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-xs tracking-[0.25em] uppercase hover-accent"
-                style={{
-                  background: 'var(--accent)',
-                  color: '#fff',
-                  border: '1px solid var(--accent)',
-                }}
-              >
-                Book a session <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={2} />
-              </Link>
-              <Link
-                to="/instant-consult?mode=signup"
-                className="mt-3 inline-flex items-center gap-2 px-6 py-3 rounded-full text-xs tracking-[0.2em] uppercase hover-accent"
-                style={{
-                  border: '1px solid var(--special-border)',
-                  color: 'var(--special-accent)',
-                  background: 'var(--special-bg)',
-                }}
-              >
-                Sign Up Instant Consult <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={2} />
-              </Link>
             </motion.div>
           </div>
 
@@ -228,9 +237,21 @@ export default function Footer() {
             background: 'linear-gradient(90deg, var(--accent-dim), transparent 35%, var(--accent-dim))',
           }}
         >
-          <p className="text-xs font-light" style={{ color: 'var(--fg3)' }}>
-            © {new Date().getFullYear()} Quantum Healing Space · All rights reserved.
-          </p>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs font-light" style={{ color: 'var(--fg3)' }}>
+              © {new Date().getFullYear()} Quantum Healing Space · All rights reserved.
+            </p>
+            <a
+              href="https://www.flaticon.com/free-icons/particles"
+              title="particles icons"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-light"
+              style={{ color: 'var(--fg3)' }}
+            >
+              Particles icons created by Prosymbols Premium - Flaticon
+            </a>
+          </div>
           <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--fg3)' }}>
             <span className="font-mono tracking-wider">QHS v1.0</span>
             <span aria-hidden>·</span>

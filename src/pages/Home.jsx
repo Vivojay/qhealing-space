@@ -3,11 +3,15 @@ import { motion, useScroll, useTransform } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Sparkles, BookOpen, Orbit, Clock3, Feather, Music, ChevronDown, ArrowUpRight } from 'lucide-react';
 import { createPageUrl } from '@/utils';
+import { useTheme } from '@/context/ThemeContext';
 import Footer from '@/components/wellness/Footer';
 import InstagramReelsGrid from '@/components/wellness/InstagramReelsGrid';
 import textureImmo from '../assets/textures/immo-wegmann-R24Vq8RRxWU-unsplash.jpg';
 import textureBernd from '../assets/textures/bernd-dittrich-MFxXebdF0mU-unsplash.jpg';
 import heroMeImage from '../../attached_assets/elements/hero-me.jpg';
+
+const HERO_VIDEO_SRC = 'https://www.pexels.com/download/video/8025555/';
+const HERO_VIDEO_POSTER = 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=2200&q=95';
 
 const SERVICES = [
   {
@@ -76,6 +80,7 @@ const TESTIMONIALS = [
 ];
 
 export default function Home() {
+  const { isDark } = useTheme();
   const heroRef = useRef(null);
   const heroWordmarkRef = useRef(null);
   const [mouseX, setMouseX] = useState(0);
@@ -83,14 +88,19 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [heroHeight, setHeroHeight] = useState(null);
   const [wordmarkEdgeInset, setWordmarkEdgeInset] = useState(24);
+  const [heroVideoFailed, setHeroVideoFailed] = useState(false);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const bgY = useTransform(scrollYProgress, [0, 1], ['0%', '20%']);
+  const heroMediaStyle = isDark
+    ? { transform: 'scaleX(-1)' }
+    : { transform: 'scaleX(-1)' }
+    // : { filter: 'contrast(2) brightness(1) saturate(1.2)', transform: 'scaleX(-1)' };
 
   const syncHeroGeometry = useCallback(() => {
     if (typeof window === 'undefined') return;
 
     const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || 0);
-    const edgeInset = Math.max(16, Math.min(40, Math.round(viewportHeight * 0.04)));
+    const edgeInset = Math.max(24, Math.min(52, Math.round(viewportHeight * 0.05)));
     const textHeight = heroWordmarkRef.current
       ? Math.ceil(heroWordmarkRef.current.getBoundingClientRect().height)
       : 0;
@@ -140,7 +150,7 @@ export default function Home() {
         className="relative overflow-hidden"
         style={{ height: heroHeight ? `${heroHeight}px` : '100svh' }}
       >
-        {/* Background image */}
+        {/* Background video */}
         <motion.div
           className="absolute inset-0 scale-[1.08]"
           style={{
@@ -151,15 +161,38 @@ export default function Home() {
             transition: 'transform 0.8s cubic-bezier(0.22,1,0.36,1)',
           }}
         >
-          <img
-            src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=2200&q=95"
-            alt=""
-            className="w-full h-full object-cover"
-          />
+          {heroVideoFailed ? (
+            <img
+              src={HERO_VIDEO_POSTER}
+              alt=""
+              className="w-full h-full object-cover"
+              style={heroMediaStyle}
+              loading="eager"
+              fetchPriority="high"
+            />
+          ) : (
+            <video
+              src={HERO_VIDEO_SRC}
+              poster={HERO_VIDEO_POSTER}
+              className="w-full h-full object-cover"
+              style={heroMediaStyle}
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+              onError={() => setHeroVideoFailed(true)}
+              aria-hidden="true"
+            />
+          )}
         </motion.div>
-        <div className="absolute inset-0" style={{ background: 'var(--hero-overlay-left)' }} />
-        <div className="absolute inset-0" style={{ background: 'var(--hero-overlay-bottom)' }} />
-        <div className="absolute inset-0 pointer-events-none" style={{ background: 'var(--hero-overlay-glow)' }} />
+        {isDark && (
+          <>
+            <div className="absolute inset-0" style={{ background: 'var(--hero-overlay-left)' }} />
+            <div className="absolute inset-0" style={{ background: 'var(--hero-overlay-bottom)' }} />
+            <div className="absolute inset-0 pointer-events-none" style={{ background: 'var(--hero-overlay-glow)' }} />
+          </>
+        )}
 
         {/* ── QUANTUM HEALING SPACE — TRUE VERTICAL text (writing-mode) ── */}
         <div
@@ -212,7 +245,7 @@ export default function Home() {
               <img
                 src={heroMeImage}
                 alt="Portrait of Vartika Shukla"
-                className="block h-28 w-auto object-cover lg:h-[clamp(244px,31vh,328px)]"
+                className="block h-28 w-auto object-cover lg:h-[clamp(268px,32vh,392px)] xl:h-[clamp(332px,34vh,468px)] 2xl:h-[clamp(384px,36vh,540px)]"
                 style={{
                   border: '1px solid var(--border2)',
                   boxShadow: '0 12px 36px rgba(0,0,0,0.28)',
@@ -244,13 +277,6 @@ export default function Home() {
               transition={{ duration: 0.8, delay: 0.8 }}
               className="flex gap-3 flex-wrap"
             >
-              <Link
-                to={`${createPageUrl('Instant Consult')}?mode=signup`}
-                className="px-7 py-3 text-xs tracking-widest uppercase transition-opacity hover:opacity-75"
-                style={{ background: 'var(--special-accent)', color: '#fff' }}
-              >
-                Sign Up Instant Consult
-              </Link>
               <Link
                 to="/healings"
                 className="px-7 py-3 text-xs tracking-widest uppercase transition-opacity hover:opacity-70"

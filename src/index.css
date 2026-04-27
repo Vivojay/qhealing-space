@@ -48,6 +48,13 @@
   --special-bg-active: rgba(224, 106, 106, 0.16);
   --special-text: rgba(245, 246, 250, 0.78);
 
+  --overlay-soft: rgba(14, 16, 20, 0.36);
+
+  --status-done-bg: rgba(107, 160, 204, 0.25);
+  --status-done-fg: #9cc8e6;
+  --status-done-border: rgba(107, 160, 204, 0.4);
+  --status-success-fg: #9cc8e6;
+
   --font-sans: 'Inter Tight', 'Inter', system-ui, sans-serif;
   --font-display: 'Manrope', 'Inter Tight', sans-serif;
   --font-grotesk: 'Space Grotesk', sans-serif;
@@ -100,6 +107,13 @@ html.light-mode {
   --special-bg: rgba(183, 67, 67, 0.08);
   --special-bg-active: rgba(183, 67, 67, 0.16);
   --special-text: rgba(20, 22, 28, 0.72);
+
+  --overlay-soft: rgba(244, 242, 236, 0.56);
+
+  --status-done-bg: rgba(22, 107, 69, 0.12);
+  --status-done-fg: #166b45;
+  --status-done-border: rgba(22, 107, 69, 0.38);
+  --status-success-fg: #166b45;
 }
 
 html {
@@ -153,6 +167,37 @@ html.light-mode ::-webkit-scrollbar-thumb:hover { background: rgba(20,22,28, 0.8
 html { scrollbar-color: rgba(245,246,250,0.45) transparent; scrollbar-width: thin; }
 html.light-mode { scrollbar-color: rgba(20,22,28,0.55) transparent; }
 
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+button:not(.no-hover-feedback) {
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, transform 0.16s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+button:not(:disabled):not(.no-hover-feedback):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+  box-shadow: 0 10px 22px -18px rgba(0, 0, 0, 0.55);
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+.hover-feedback {
+  transition: transform 0.16s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+.hover-feedback:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow: 0 10px 22px -18px rgba(0, 0, 0, 0.55);
+}
+
 ::selection { background: var(--accent-soft); color: var(--fg); }
 
 /* Hover utilities — visibly distinct */
@@ -177,6 +222,14 @@ html.light-mode { scrollbar-color: rgba(20,22,28,0.55) transparent; }
   background-color: var(--accent-soft) !important;
   color: var(--accent-text) !important;
   border-color: var(--accent) !important;
+}
+.hover-special {
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+.hover-special:hover {
+  background-color: var(--special-bg-active) !important;
+  color: var(--special-accent) !important;
+  border-color: var(--special-accent) !important;
 }
 .hover-lift {
   transition: transform 0.2s ease, box-shadow 0.2s ease;

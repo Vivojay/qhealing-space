@@ -152,7 +152,11 @@ export default function AdminOverview() {
       <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
         <StatusRow label="Firebase Firestore" ok={metrics.firebase_configured} detail={metrics.firebase_configured ? 'Connected' : 'Not configured'} />
         <StatusRow label="Instagram Graph API" ok={ig.configured} detail={ig.configured ? 'Token present' : 'Token missing'} />
-        <StatusRow label="Site config doc" ok={metrics.config_present} detail={metrics.config_present ? 'Loaded from Firestore' : 'Using defaults'} />
+        <StatusRow
+          label="Site config"
+          ok
+          detail={metrics.config_source === 'firestore' ? 'Loaded from Firestore' : 'Using defaults'}
+        />
       </div>
     </div>
   );
