@@ -99,6 +99,35 @@ export const adminApi = {
       body: { status, note },
     }),
 
+  listSiteChatThreads: ({
+    status,
+    query,
+    stale,
+    sortBy,
+    sortDir,
+    limit,
+  } = {}) => {
+    const qs = new URLSearchParams();
+    if (status) qs.set('status', status);
+    if (query) qs.set('query', query);
+    if (stale) qs.set('stale', stale);
+    if (sortBy) qs.set('sort_by', sortBy);
+    if (sortDir) qs.set('sort_dir', sortDir);
+    if (limit) qs.set('limit', String(limit));
+    const suffix = qs.toString();
+    return apiFetch(`/api/admin/site-chat/threads${suffix ? `?${suffix}` : ''}`);
+  },
+  updateSiteChatThreadStatus: (id, status) =>
+    apiFetch(`/api/admin/site-chat/threads/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: { status },
+    }),
+  sendSiteChatReply: (id, reply_text) =>
+    apiFetch(`/api/admin/site-chat/threads/${encodeURIComponent(id)}/reply`, {
+      method: 'POST',
+      body: { reply_text },
+    }),
+
   listCombinedHealingsRequests: ({
     status,
     checkoutStatus,

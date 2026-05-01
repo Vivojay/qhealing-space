@@ -1,18 +1,44 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Instagram, Mail, MessageSquare, Layers3, Settings, LogOut, ExternalLink } from 'lucide-react';
-import { clearToken } from './api';
+import { LayoutDashboard, Instagram, Mail, MessageSquare, Layers3, MessagesSquare, Settings, LogOut, ExternalLink } from 'lucide-react';
+import { adminApi, clearToken } from './api';
 
 const TABS = [
   { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/admin/instagram', label: 'Instagram', icon: Instagram },
   { to: '/admin/newsletter', label: 'Newsletter', icon: Mail },
   { to: '/admin/instant-consult', label: 'Instant Consult', icon: MessageSquare },
+  { to: '/admin/site-chat', label: 'Site Chat', icon: MessagesSquare },
   { to: '/admin/combined-healings', label: 'Combined Healings', icon: Layers3 },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function AdminLayout({ children, onSignOut }) {
+  const [badges, setBadges] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const metrics = await adminApi.metrics();
+        if (!cancelled) {
+          setBadges(metrics?.admin_badges || {});
+        }
+      } catch {
+        if (!cancelled) setBadges({});
+      }
+    };
+    load();
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      load();
+    }, 12000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const handleSignOut = () => {
     clearToken();
     if (onSignOut) onSignOut();
@@ -42,7 +68,18 @@ export default function AdminLayout({ children, onSignOut }) {
 
         <nav className="flex-1 p-4 lg:p-6">
           <div className="flex lg:flex-col gap-1 lg:gap-1.5 overflow-x-auto lg:overflow-visible">
-            {TABS.map(({ to, label, icon: Icon, end }) => (
+            {TABS.map(({ to, label, icon: Icon, end }) => {
+              const badgeKey = to === '/admin/newsletter'
+                ? 'newsletter'
+                : to === '/admin/instant-consult'
+                  ? 'instant_consult'
+                  : to === '/admin/site-chat'
+                    ? 'site_chat'
+                    : to === '/admin/combined-healings'
+                      ? 'combined_healings'
+                      : '';
+              const badgeValue = badgeKey ? Number(badges?.[badgeKey] || 0) : 0;
+              return (
               <NavLink
                 key={to}
                 to={to}
@@ -55,8 +92,17 @@ export default function AdminLayout({ children, onSignOut }) {
               >
                 <Icon className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.8} />
                 <span className="font-light">{label}</span>
+                {badgeValue > 0 && (
+                  <span
+                    className="ml-auto min-w-[24px] h-5 px-1.5 rounded-full inline-flex items-center justify-center text-[10px] tracking-[0.04em]"
+                    style={{ background: 'var(--special-bg)', border: '1px solid var(--special-border)', color: 'var(--special-accent)' }}
+                  >
+                    {badgeValue > 99 ? '99+' : badgeValue}
+                  </span>
+                )}
               </NavLink>
-            ))}
+              );
+            })}
           </div>
         </nav>
 

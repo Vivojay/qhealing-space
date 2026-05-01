@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
@@ -254,9 +254,12 @@ function StatusBadge({ meta }) {
 
 function MetricPill({ label, value, accent = 'var(--accent-text)' }) {
   return (
-    <div className="rounded-full px-3 py-2" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
+    <div
+      className="rounded-[22px] px-4 py-3 min-h-[74px] flex flex-col justify-between"
+      style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}
+    >
       <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: 'var(--fg3)' }}>{label}</p>
-      <p className="mt-1 text-sm" style={{ color: accent }}>{value}</p>
+      <p className="mt-2 text-sm sm:text-[15px] leading-tight" style={{ color: accent }}>{value}</p>
     </div>
   );
 }
@@ -265,6 +268,41 @@ function SectionCard({ children, className = '' }) {
   return (
     <div className={`rounded-[28px] p-5 lg:p-6 ${className}`} style={SURFACE_STYLE}>
       {children}
+    </div>
+  );
+}
+
+function ToastStack({ toasts }) {
+  return (
+    <div className="fixed top-4 right-4 z-50 w-[min(92vw,380px)] space-y-3 pointer-events-none">
+      <AnimatePresence>
+        {toasts.map((toast) => {
+          const tone = toast.tone === 'error'
+            ? {
+              border: '1px solid rgba(224,138,111,0.34)',
+              background: 'rgba(224,138,111,0.14)',
+              color: '#F2B199',
+            }
+            : {
+              border: '1px solid rgba(99,230,168,0.26)',
+              background: 'rgba(67,154,106,0.14)',
+              color: '#7DE5B1',
+            };
+          return (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: -10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.98 }}
+              transition={{ duration: 0.2 }}
+              className="rounded-2xl px-4 py-3 shadow-2xl"
+              style={tone}
+            >
+              <p className="text-sm leading-relaxed">{toast.message}</p>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
     </div>
   );
 }
@@ -285,6 +323,7 @@ export default function CombinedHealings() {
   const qrScrollRef = useRef('');
   const checkoutSyncRequestRef = useRef(0);
   const qrImageCacheRef = useRef(new Map());
+  const toastTimersRef = useRef(new Map());
 
   const [events, setEvents] = useState([]);
   const [eventsLoading, setEventsLoading] = useState(true);
@@ -316,6 +355,8 @@ export default function CombinedHealings() {
   const [checkoutNotice, setCheckoutNotice] = useState('');
   const [checkoutRails, setCheckoutRails] = useState(DEFAULT_OUTSIDE_RAILS);
   const [checkoutQrDisplaySrc, setCheckoutQrDisplaySrc] = useState('');
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [toasts, setToasts] = useState([]);
 
   const emailVerificationPending = useMemo(() => isUnverifiedPasswordUser(authUser), [authUser]);
   const selectedEvent = useMemo(
@@ -454,6 +495,29 @@ export default function CombinedHealings() {
   ]);
 
   const canGenerateCheckout = checkoutBlockedReason === '';
+
+  const pushToast = useCallback((message, tone = 'success') => {
+    if (!message) return;
+    const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    setToasts((prev) => [...prev, { id, message, tone }]);
+    const timer = window.setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+      toastTimersRef.current.delete(id);
+    }, 4200);
+    toastTimersRef.current.set(id, timer);
+  }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    pushToast(notice, 'success');
+    setNotice('');
+  }, [notice, pushToast]);
+
+  useEffect(() => {
+    if (!error) return;
+    pushToast(error, 'error');
+    setError('');
+  }, [error, pushToast]);
 
   const nudgeAuth = useCallback((mode = 'signup') => {
     const normalizedMode = mode === 'login' ? 'login' : 'signup';
@@ -887,6 +951,8 @@ export default function CombinedHealings() {
       } catch {}
     });
     qrImageCacheRef.current.clear();
+    toastTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    toastTimersRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -925,7 +991,9 @@ export default function CombinedHealings() {
   }, [checkoutCompleted, approvedWishIdSet]);
 
   const saveNow = useCallback(async () => {
-    await persistRequest({ silent: false });
+    try {
+      await persistRequest({ silent: false });
+    } catch {}
   }, [persistRequest]);
 
   const submitReview = useCallback(async () => {
@@ -953,19 +1021,18 @@ export default function CombinedHealings() {
       if (!res.ok) throw new Error(await parseApiError(res));
       const payload = await res.json();
       applyRequestRow(payload?.data || null, { preserveSelection: false });
-      setNotice(payload?.client_notice || 'Review submitted. Wait for admin approval or correction notes.');
+      pushToast(payload?.client_notice || 'Review submitted. Wait for admin approval or correction notes.');
     } catch (err) {
-      setError(err.message || 'Unable to submit this request for review.');
+      pushToast(err.message || 'Unable to submit this request for review.', 'error');
     } finally {
       setReviewing(false);
     }
-  }, [idToken, persistRequest, selectedEvent, applyRequestRow]);
+  }, [idToken, persistRequest, selectedEvent, applyRequestRow, pushToast]);
 
   const cancelRequest = useCallback(async () => {
     if (!idToken) return;
     setCancelling(true);
-    setError('');
-    setNotice('');
+    setCancelConfirmOpen(false);
     try {
       const res = await fetch(apiUrl('/api/combined-healings/my-request/cancel'), {
         method: 'POST',
@@ -973,13 +1040,13 @@ export default function CombinedHealings() {
       });
       if (!res.ok) throw new Error(await parseApiError(res));
       applyRequestRow(null);
-      setNotice('Combined Healings request cancelled and removed.');
+      pushToast('Request cancelled. Approved wishes and checkout were cleared.');
     } catch (err) {
-      setError(err.message || 'Unable to cancel this request right now.');
+      pushToast(err.message || 'Unable to cancel this request right now.', 'error');
     } finally {
       setCancelling(false);
     }
-  }, [idToken, applyRequestRow]);
+  }, [idToken, applyRequestRow, pushToast]);
 
   const onSignOut = useCallback(async () => {
     if (!firebaseAuth) return;
@@ -997,6 +1064,7 @@ export default function CombinedHealings() {
 
   return (
     <div style={{ background: 'var(--bg)' }}>
+      <ToastStack toasts={toasts} />
       <section className="relative overflow-hidden pt-20 pb-14 lg:pt-24 lg:pb-18" style={{ borderBottom: '1px solid var(--border)' }}>
         <div
           className="absolute inset-0 pointer-events-none"
@@ -1036,8 +1104,11 @@ export default function CombinedHealings() {
             >
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[10px] tracking-[0.22em] uppercase" style={{ color: 'var(--fg3)' }}>Live Checkout Rule</p>
-                  <p className="mt-2 text-lg" style={{ color: 'var(--fg)' }}>QR must match the approved total.</p>
+                  <p className="text-[10px] tracking-[0.22em] uppercase" style={{ color: 'var(--fg3)' }}>Price Guide</p>
+                  <p className="mt-2 text-lg" style={{ color: 'var(--fg)' }}>Your total updates from the approved wishes you include.</p>
+                  <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                    The QR amount refreshes to match the latest selection.
+                  </p>
                 </div>
                 <div
                   className="w-12 h-12 rounded-full inline-flex items-center justify-center"
@@ -1047,9 +1118,9 @@ export default function CombinedHealings() {
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2">
-                <MetricPill label="Price" value={unitLabel} accent="var(--fg)" />
-                <MetricPill label="Selected" value={selectedApprovedWishIds.length} accent="var(--fg)" />
-                <MetricPill label="Total" value={totalLabel} accent="var(--special-accent)" />
+                <MetricPill label="Per Wish" value={unitLabel} accent="var(--fg)" />
+                <MetricPill label="Approved Count" value={selectedApprovedWishIds.length} accent="var(--fg)" />
+                <MetricPill label="Pay Total" value={totalLabel} accent="var(--special-accent)" />
               </div>
             </motion.div>
           </div>
@@ -1188,7 +1259,7 @@ export default function CombinedHealings() {
                     </button>
                   </div>
 
-                  <div className="mt-5 flex gap-2 flex-wrap">
+                  <div className="mt-5 grid grid-cols-2 xl:grid-cols-4 gap-3">
                     <MetricPill label="Request" value={requestStatusMeta.label} accent="var(--fg)" />
                     <MetricPill label="Checkout" value={checkoutStatusMeta.label} accent="var(--fg)" />
                     <MetricPill label="Approved" value={requestRow?.approved_count || 0} />
@@ -1312,7 +1383,7 @@ export default function CombinedHealings() {
                       This panel never trusts stale UI state. If the approved selection changes, the QR is cleared and rebuilt before the panel returns to ready.
                     </p>
 
-                    <div className="mt-5 grid grid-cols-2 gap-3">
+                    <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <button
                         type="button"
                         onClick={() => setCountryProfile('india')}
@@ -1353,10 +1424,9 @@ export default function CombinedHealings() {
                           <p className="mt-1 text-sm" style={{ color: 'var(--fg2)' }}>{selectedEvent?.date || 'No date selected yet'}</p>
                           <p className="mt-1 text-xs" style={{ color: 'var(--fg3)' }}>{selectedEvent?.hindu_lunar?.label || 'Lunar label will appear here'}</p>
                         </div>
-                        <StatusBadge meta={checkoutStatusMeta} />
                       </div>
 
-                      <div className="mt-5 grid grid-cols-2 gap-3">
+                      <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <MetricPill label="Approved Selected" value={selectedApprovedWishIds.length} accent="var(--fg)" />
                         <MetricPill label="Unit Price" value={unitLabel} accent="var(--fg)" />
                       </div>
@@ -1421,17 +1491,7 @@ export default function CombinedHealings() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => refreshCheckoutSession(checkoutSession?.id)}
-                        disabled={!checkoutSession?.id || checkoutRefreshing}
-                        className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-[11px] tracking-[0.2em] uppercase disabled:opacity-45"
-                        style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
-                      >
-                        {checkoutRefreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} /> : <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.8} />}
-                        Refresh Payment
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelRequest}
+                        onClick={() => setCancelConfirmOpen(true)}
                         disabled={checkoutCompleted || cancelling}
                         className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-[11px] tracking-[0.2em] uppercase disabled:opacity-45"
                         style={{ border: '1px solid rgba(224,138,111,0.35)', color: '#F2B199' }}
@@ -1462,21 +1522,31 @@ export default function CombinedHealings() {
                                   : 'No active QR'}
                           </p>
                         </div>
-                        <StatusBadge meta={checkoutStatusMeta} />
                       </div>
 
-                      <div className="mt-5 rounded-[24px] p-3 flex items-center justify-center min-h-[320px]" style={{ border: '1px solid var(--border2)', background: checkoutSessionReady ? '#fff' : 'rgba(255,255,255,0.02)' }}>
+                      <div
+                        className="mt-5 rounded-[24px] p-3 sm:p-4 flex items-center justify-center min-h-[240px] sm:min-h-[320px]"
+                        style={{
+                          border: '1px solid var(--border2)',
+                          background: checkoutSessionReady ? 'var(--bg-elev)' : 'rgba(255,255,255,0.02)',
+                        }}
+                      >
                         {checkoutSyncing ? (
                           <div className="text-center" style={{ color: 'var(--fg2)' }}>
                             <Loader2 className="w-6 h-6 animate-spin mx-auto" strokeWidth={1.8} />
                             <p className="mt-3 text-sm">Clearing stale QR and creating a fresh one...</p>
                           </div>
                         ) : checkoutSessionReady ? (
-                          <img
-                            src={checkoutQrDisplaySrc || checkoutSession.qr_src}
-                            alt="Combined Healings checkout QR"
-                            className="block w-full h-auto max-w-[280px] aspect-square object-contain"
-                          />
+                          <div
+                            className="w-full max-w-[320px] rounded-[22px] p-3 sm:p-4"
+                            style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}
+                          >
+                            <img
+                              src={checkoutQrDisplaySrc || checkoutSession.qr_src}
+                              alt="Combined Healings checkout QR"
+                              className="block w-full h-auto max-w-[280px] mx-auto aspect-square object-contain"
+                            />
+                          </div>
                         ) : (
                           <div className="text-center max-w-xs" style={{ color: 'var(--fg2)' }}>
                             <WalletCards className="w-7 h-7 mx-auto" strokeWidth={1.7} />
@@ -1487,7 +1557,7 @@ export default function CombinedHealings() {
                         )}
                       </div>
 
-                      <div className="mt-4 flex items-center gap-2 flex-wrap">
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <MetricPill label="Session Wishes" value={checkoutSession?.wish_count || 0} accent="var(--fg)" />
                         <MetricPill label="Session Amount" value={checkoutSession?.amount ? formatMoney(checkoutSession.amount, checkoutSession.country_profile) : 'Not ready'} accent="var(--fg)" />
                       </div>
@@ -1528,27 +1598,57 @@ export default function CombinedHealings() {
                   Syncing latest request state...
                 </div>
               )}
-
-              {(error || notice) && (
-                <div className="space-y-3">
-                  {error && (
-                    <div className="rounded-2xl p-4 flex items-start gap-3" style={{ border: '1px solid rgba(224,138,111,0.34)', background: 'rgba(224,138,111,0.08)' }}>
-                      <AlertCircle className="w-4 h-4 mt-0.5" style={{ color: '#F2B199' }} strokeWidth={1.9} />
-                      <p className="text-sm leading-relaxed" style={{ color: '#F2B199' }}>{error}</p>
-                    </div>
-                  )}
-                  {notice && (
-                    <div className="rounded-2xl p-4 flex items-start gap-3" style={{ border: '1px solid rgba(99,230,168,0.26)', background: 'rgba(67,154,106,0.1)' }}>
-                      <CheckCircle2 className="w-4 h-4 mt-0.5" style={{ color: '#7DE5B1' }} strokeWidth={1.9} />
-                      <p className="text-sm leading-relaxed" style={{ color: '#7DE5B1' }}>{notice}</p>
-                    </div>
-                  )}
-                </div>
-              )}
             </>
           )}
         </div>
       </section>
+
+      <AnimatePresence>
+        {cancelConfirmOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 flex items-center justify-center px-4"
+            style={{ background: 'rgba(5, 8, 14, 0.72)' }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.98 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-md rounded-[28px] p-5 sm:p-6"
+              style={{ border: '1px solid rgba(224,138,111,0.34)', background: 'var(--bg-elev)' }}
+            >
+              <p className="text-[10px] tracking-[0.22em] uppercase" style={{ color: '#F2B199' }}>Danger Move</p>
+              <h3 className="mt-2 text-2xl" style={{ color: 'var(--fg)' }}>Cancel this request?</h3>
+              <p className="mt-3 text-sm leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                This clears your current request, approved wishes, and active checkout session.
+              </p>
+              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCancelConfirmOpen(false)}
+                  className="inline-flex items-center justify-center rounded-full px-4 py-3 text-[11px] tracking-[0.2em] uppercase"
+                  style={{ border: '1px solid var(--border2)', color: 'var(--fg2)', background: 'var(--bg)' }}
+                >
+                  Keep Request
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelRequest}
+                  disabled={cancelling}
+                  className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-[11px] tracking-[0.2em] uppercase disabled:opacity-55"
+                  style={{ border: '1px solid rgba(224,138,111,0.35)', color: '#F2B199', background: 'rgba(224,138,111,0.1)' }}
+                >
+                  {cancelling ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} /> : <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />}
+                  Confirm Cancel
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <Footer />
     </div>

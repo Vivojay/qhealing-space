@@ -1,109 +1,151 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, MessageCircle, Sparkles } from 'lucide-react';
+import { X, Send, MessageCircle, Sparkles, Loader2 } from 'lucide-react';
+import { apiUrl } from '@/utils';
 
-const FAQ = [
-  {
-    patterns: ['hello', 'hi', 'hey', 'namaste', 'start', 'help'],
-    reply: "Namaste 🙏 Welcome to Quantum Healing Space. I'm here to guide you. Are you exploring healing sessions, workshops, retreats — or do you have a specific question?"
-  },
-  {
-    patterns: ['service', 'modality', 'offer', 'what do', 'healing', 'therapy', 'treat'],
-    reply: "We offer 20+ modalities including Reiki, Deep Chakra Healing, Past Life Regression, Angel Therapy, Akashic Records, Hypnosis, Sound Therapy, EFT, Ho'oponopono, Ancestral Healing, and more. Any specific one you'd like to know about?"
-  },
-  {
-    patterns: ['reiki'],
-    reply: "Reiki channels universal life force energy to release blockages and restore balance across your physical, emotional, and spiritual bodies. Sessions are 60–90 min, available in-person or online."
-  },
-  {
-    patterns: ['chakra'],
-    reply: "Deep Chakra Healing works on your 7 energy centers — each linked to organs, nerve plexuses, and emotional states. Balancing these can bring profound shifts in physical and spiritual wellbeing."
-  },
-  {
-    patterns: ['akashic', 'record'],
-    reply: "Akashic Records are the vibrational archive of every soul's journey — past, present, and future. Accessing your records can reveal deep patterns, karmic threads, and hidden wisdom guiding your current life."
-  },
-  {
-    patterns: ['past life', 'regression', 'past birth'],
-    reply: "Past Life Regression uses hypnosis to recover memories from previous incarnations, helping resolve relationship patterns, unexplained fears, phobias, and chronic illnesses that have karmic roots."
-  },
-  {
-    patterns: ['price', 'cost', 'charge', 'fee', 'how much', 'rate'],
-    reply: "Consultation: ₹2,500 (India) · $50 (outside India) — fixed upfront.\nTreatment (India): ₹5,000 first hour + ₹3,000 per additional hour.\nTreatment (International): $110 first hour + $70 per additional hour.\nDistance sessions require full payment 24 hrs in advance."
-  },
-  {
-    patterns: ['book', 'appointment', 'schedule', 'session', 'register'],
-    reply: "To book a session:\n📞 WhatsApp / Call: +91 9267904256\n✉️ vartikashukla@xyz.com\n\nIn-person: Sector 56, Gurugram\nOnline: WhatsApp / Skype by appointment"
-  },
-  {
-    patterns: ['online', 'distance', 'remote', 'skype', 'whatsapp'],
-    reply: "Yes — both in-person and distance healing are equally effective. Online sessions are conducted via WhatsApp or Skype, strictly by prior appointment."
-  },
-  {
-    patterns: ['retreat'],
-    reply: "Our retreats include:\n• Stress Busting Retreat\n• Silent Meditation & Yoga\n• Chakra Balancing\n• Spiritual Healing\n• Reiki Healing\n• Forgiveness Retreat\n\nEach is a deeply transformative immersive experience. Want details on any?"
-  },
-  {
-    patterns: ['workshop'],
-    reply: "We conduct regular workshops on Reiki, Chakra Healing, Past Life Regression, Angel Therapy, EFT, Meditation, Tarot, and more — both in-person and online."
-  },
-  {
-    patterns: ['corporate', 'company', 'organization', 'team', 'office', 'workplace'],
-    reply: "Our corporate programs integrate spiritual practices into organizational culture — focusing on stress management, change management, and team wellbeing. Previous clients include SmartAnalyst."
-  },
-  {
-    patterns: ['vartika', 'founder', 'about', 'who are', 'guide'],
-    reply: "Quantum Healing Space is guided by Vartika Shukla — a healer, hypnotherapist, life coach, and holistic practitioner with innate intuitive abilities. She empowers people toward Personal, Professional & Spiritual growth."
-  },
-  {
-    patterns: ['contact', 'reach', 'phone', 'email', 'address', 'location', 'where'],
-    reply: "📍 Sector 56, Gurugram – 122011\n📞 +91 9267904256\n📞 +91 9819962635\n✉️ vartikashukla@xyz.com\n📸 @quantum_healingspace"
-  },
-  {
-    patterns: ['payment', 'pay', 'transfer', 'paytm', 'paypal', 'bank'],
-    reply: "Payment options:\n• Bank Transfer (HDFC): A/C 02931140001114, IFSC HDFC0000293\n• Paytm: 9819962635\n• PayPal: vartikashukla2000@yahoo.com\n• Any other convenient mode"
-  },
-  {
-    patterns: ['child', 'kid', 'children', 'young'],
-    reply: "We have specialised healing workshops for children addressing aggression, attention deficit, and concentration issues — using creative methods like art, clay modeling, and movement therapy."
-  },
-];
+const SESSION_KEY = 'qhs_site_chat_session_id';
+const SEND_THROTTLE_MS = 900;
+const THREAD_REFRESH_MS = 12000;
 
-function getReply(input) {
-  const lower = input.toLowerCase();
-  for (const item of FAQ) {
-    if (item.patterns.some(p => lower.includes(p))) {
-      return item.reply;
-    }
-  }
-  return "Thank you for reaching out. For personalised guidance, please contact Vartika directly:\n📞 +91 9267904256\n✉️ vartikashukla@xyz.com";
+function unreadKey(sessionId) {
+  return `qhs_site_chat_last_seen_admin_at:${sessionId}`;
 }
 
-const INITIAL_MESSAGE = {
-  id: 0,
-  from: 'bot',
-  text: "Namaste 🙏 I'm your guide to Quantum Healing Space. Ask me about our healing modalities, retreats, workshops, booking, or anything else.",
-};
+function readLastSeenAdminAt(sessionId) {
+  if (typeof window === 'undefined' || !sessionId) return '';
+  return window.localStorage.getItem(unreadKey(sessionId)) || '';
+}
+
+function writeLastSeenAdminAt(sessionId, value) {
+  if (typeof window === 'undefined' || !sessionId) return;
+  if (value) window.localStorage.setItem(unreadKey(sessionId), value);
+}
+
+function latestAdminTimestamp(messages) {
+  if (!Array.isArray(messages)) return '';
+  return messages.reduce((latest, item) => {
+    if (item?.sender !== 'admin') return latest;
+    const createdAt = String(item?.created_at || '').trim();
+    return createdAt > latest ? createdAt : latest;
+  }, '');
+}
+
+function ensureSessionId() {
+  if (typeof window === 'undefined') return '';
+  const existing = window.localStorage.getItem(SESSION_KEY);
+  if (existing) return existing;
+  const created = `sc_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  window.localStorage.setItem(SESSION_KEY, created);
+  return created;
+}
 
 export default function ChatBot() {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState([INITIAL_MESSAGE]);
+  const [sessionId, setSessionId] = useState('');
+  const [thread, setThread] = useState(null);
   const [input, setInput] = useState('');
-  const [typing, setTyping] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const containerRef = useRef(null);
+  const lastSendAtRef = useRef(0);
+
+  useEffect(() => {
+    const nextSessionId = ensureSessionId();
+    setSessionId(nextSessionId);
+    setUnreadCount(0);
+  }, []);
+
+  const reconcileUnread = useCallback((nextThread, { markSeen = false } = {}) => {
+    const messages = Array.isArray(nextThread?.messages) ? nextThread.messages : [];
+    const latestAdminAt = latestAdminTimestamp(messages);
+    if (!latestAdminAt) {
+      setUnreadCount(0);
+      return;
+    }
+
+    if (markSeen) {
+      writeLastSeenAdminAt(sessionId, latestAdminAt);
+      setUnreadCount(0);
+      return;
+    }
+
+    const lastSeenAdminAt = readLastSeenAdminAt(sessionId);
+    const nextUnread = messages.filter(
+      (item) => item?.sender === 'admin' && String(item?.created_at || '') > lastSeenAdminAt,
+    ).length;
+    setUnreadCount(nextUnread);
+  }, [sessionId]);
+
+  const bootstrapSession = useCallback(async () => {
+    if (!sessionId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(apiUrl('/api/site-chat/session'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.detail || `HTTP ${res.status}`);
+      const nextThread = payload?.data || null;
+      setThread(nextThread);
+      reconcileUnread(nextThread, { markSeen: open });
+    } catch (err) {
+      setError(err.message || 'Could not open chat right now.');
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionId, reconcileUnread, open]);
+
+  const refreshThread = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const res = await fetch(apiUrl(`/api/site-chat/session/${encodeURIComponent(sessionId)}`));
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.detail || `HTTP ${res.status}`);
+      const nextThread = payload?.data || null;
+      setThread(nextThread);
+      reconcileUnread(nextThread, { markSeen: open });
+    } catch (err) {
+      setError(err.message || 'Could not refresh chat.');
+    }
+  }, [sessionId, reconcileUnread, open]);
+
+  useEffect(() => {
+    if (!open || !sessionId) return;
+    bootstrapSession();
+  }, [open, sessionId, bootstrapSession]);
+
+  useEffect(() => {
+    if (!sessionId) return undefined;
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      refreshThread();
+    }, THREAD_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [sessionId, refreshThread]);
 
   useEffect(() => {
     if (open) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-      setTimeout(() => inputRef.current?.focus(), 300);
+      window.setTimeout(() => inputRef.current?.focus(), 220);
     }
-  }, [open, messages]);
+  }, [open, thread?.messages?.length]);
 
-  // Auto-collapse on outside click / Escape
   useEffect(() => {
-    if (!open) return;
+    if (!open || !thread) return;
+    reconcileUnread(thread, { markSeen: true });
+  }, [open, thread, reconcileUnread]);
+
+  useEffect(() => {
+    if (!open) return undefined;
     const onPointerDown = (e) => {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setOpen(false);
@@ -120,20 +162,44 @@ export default function ChatBot() {
     };
   }, [open]);
 
-  const send = () => {
+  const messages = useMemo(() => (
+    Array.isArray(thread?.messages) && thread.messages.length
+      ? thread.messages
+      : [{
+        id: 'intro',
+        sender: 'admin',
+        text: 'Welcome. Send your question here and our team can reply from the admin desk.',
+        created_at: null,
+      }]
+  ), [thread]);
+
+  const send = async () => {
     const text = input.trim();
-    if (!text) return;
-
-    const userMsg = { id: Date.now(), from: 'user', text };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setTyping(true);
-
-    setTimeout(() => {
-      const reply = getReply(text);
-      setTyping(false);
-      setMessages(prev => [...prev, { id: Date.now() + 1, from: 'bot', text: reply }]);
-    }, 700 + Math.random() * 400);
+    if (!text || !sessionId || sending) return;
+    const now = Date.now();
+    if (now - lastSendAtRef.current < SEND_THROTTLE_MS) return;
+    lastSendAtRef.current = now;
+    setSending(true);
+    setError('');
+    try {
+      const res = await fetch(apiUrl(`/api/site-chat/session/${encodeURIComponent(sessionId)}/messages`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.detail || `HTTP ${res.status}`);
+      const nextThread = payload?.data || null;
+      setThread(nextThread);
+      reconcileUnread(nextThread, { markSeen: true });
+      setInput('');
+    } catch (err) {
+      setError(err.message || 'Could not send your message.');
+    } finally {
+      setSending(false);
+    }
   };
 
   const onKey = (e) => {
@@ -145,7 +211,6 @@ export default function ChatBot() {
 
   return (
     <div ref={containerRef}>
-      {/* Chat window */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -153,18 +218,17 @@ export default function ChatBot() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className="fixed bottom-24 right-5 lg:right-8 w-[340px] max-w-[calc(100vw-2.5rem)] rounded-2xl overflow-hidden shadow-2xl"
+            className="fixed bottom-24 right-5 lg:right-8 w-[360px] max-w-[calc(100vw-2.5rem)] rounded-2xl overflow-hidden shadow-2xl"
             style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', zIndex: 9000 }}
           >
-            {/* Header */}
             <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'var(--bg3)' }}>
                   <Sparkles className="w-4 h-4" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />
                 </div>
                 <div>
-                  <p className="text-xs font-medium" style={{ color: 'var(--fg)' }}>QHS Guide</p>
-                  <p className="text-[10px]" style={{ color: 'var(--fg3)' }}>Quantum Healing Space</p>
+                  <p className="text-xs font-medium" style={{ color: 'var(--fg)' }}>QHS Main Chat</p>
+                  <p className="text-[10px]" style={{ color: 'var(--fg3)' }}>Anonymous chat synced with admin</p>
                 </div>
               </div>
               <button onClick={() => setOpen(false)} className="p-1 rounded-lg hover:opacity-60 transition-opacity">
@@ -172,76 +236,64 @@ export default function ChatBot() {
               </button>
             </div>
 
-            {/* Messages */}
             <div className="h-[320px] overflow-y-auto px-4 py-4 space-y-3" data-lenis-prevent>
-              {messages.map(msg => (
+              {loading ? (
+                <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--fg2)' }}>
+                  <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.8} />
+                  Opening chat…
+                </div>
+              ) : messages.map((msg) => (
                 <motion.div
                   key={msg.id}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3 }}
-                  className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex ${msg.sender === 'client' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
                     className="max-w-[85%] px-4 py-2.5 rounded-xl text-xs font-light leading-relaxed whitespace-pre-line"
                     style={{
-                      background: msg.from === 'user' ? 'var(--fg3)' : 'var(--bg3)',
+                      background: msg.sender === 'client' ? 'var(--fg3)' : 'var(--bg3)',
                       color: 'var(--fg)',
-                      borderRadius: msg.from === 'user' ? '1rem 1rem 0.3rem 1rem' : '1rem 1rem 1rem 0.3rem',
+                      borderRadius: msg.sender === 'client' ? '1rem 1rem 0.3rem 1rem' : '1rem 1rem 1rem 0.3rem',
                     }}
                   >
                     {msg.text}
                   </div>
                 </motion.div>
               ))}
-              {typing && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="flex gap-1.5 px-4 py-3 w-16 rounded-xl"
-                  style={{ background: 'var(--bg3)', borderRadius: '1rem 1rem 1rem 0.3rem' }}
-                >
-                  {[0, 1, 2].map(i => (
-                    <motion.div
-                      key={i}
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ background: 'var(--fg3)' }}
-                      animate={{ y: [0, -4, 0] }}
-                      transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
-                    />
-                  ))}
-                </motion.div>
-              )}
               <div ref={bottomRef} />
             </div>
 
-            {/* Input */}
+            <div className="px-4 py-2">
+              {error ? <p className="text-[11px]" style={{ color: '#E8A58D' }}>{error}</p> : <p className="text-[11px]" style={{ color: 'var(--fg3)' }}>Replies from admin will appear here automatically.</p>}
+            </div>
+
             <div className="px-4 py-3 flex gap-3 items-center" style={{ borderTop: '1px solid var(--border)' }}>
               <input
                 ref={inputRef}
                 value={input}
-                onChange={e => setInput(e.target.value)}
+                onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKey}
-                placeholder="Ask anything..."
+                placeholder="Type your message…"
                 className="flex-1 bg-transparent text-xs outline-none font-light placeholder:opacity-30"
                 style={{ color: 'var(--fg)' }}
               />
               <button
                 onClick={send}
-                disabled={!input.trim()}
-                className="w-7 h-7 flex items-center justify-center rounded-lg transition-opacity disabled:opacity-20"
+                disabled={!input.trim() || sending}
+                className="w-8 h-8 flex items-center justify-center rounded-lg transition-opacity disabled:opacity-20"
                 style={{ background: 'var(--fg3)' }}
               >
-                <Send className="w-3.5 h-3.5" style={{ color: 'var(--fg)' }} />
+                {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--fg)' }} /> : <Send className="w-3.5 h-3.5" style={{ color: 'var(--fg)' }} />}
               </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Floating button */}
       <motion.button
-        onClick={() => setOpen(prev => !prev)}
+        onClick={() => setOpen((prev) => !prev)}
         className="fixed bottom-5 right-5 lg:right-8 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl"
         style={{ background: 'var(--fg)', zIndex: 9000 }}
         whileHover={{ scale: 1.08 }}
@@ -259,6 +311,14 @@ export default function ChatBot() {
             </motion.div>
           )}
         </AnimatePresence>
+        {!open && unreadCount > 0 && (
+          <span
+            className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1.5 rounded-full inline-flex items-center justify-center text-[10px] font-medium"
+            style={{ background: '#D95C5C', color: '#fff', border: '2px solid var(--bg)' }}
+          >
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
       </motion.button>
     </div>
   );

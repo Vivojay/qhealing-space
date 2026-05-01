@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
   Loader2,
@@ -17,7 +17,6 @@ import {
   signOut,
   updateProfile,
 } from 'firebase/auth';
-import { createPageUrl } from '@/utils';
 import Footer from '@/components/wellness/Footer';
 import { firebaseAuth, firebaseConfigured, firebaseGoogleProvider } from '@/lib/firebaseClient';
 
@@ -60,9 +59,9 @@ function buildVerificationActionSettings() {
 }
 
 function sanitizeNextPath(rawValue) {
-  const fallback = createPageUrl('Instant Consult');
   const value = String(rawValue || '').trim();
-  if (!value.startsWith('/') || value.startsWith('//')) return fallback;
+  if (!value) return null;
+  if (!value.startsWith('/') || value.startsWith('//')) return null;
   return value;
 }
 
@@ -113,7 +112,6 @@ function humanizeAuthError(err, fallback) {
 }
 
 export default function AuthPortal() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const requestedMode = useMemo(() => {
@@ -196,7 +194,7 @@ export default function AuthPortal() {
     try {
       const cred = await signInWithPopup(firebaseAuth, firebaseGoogleProvider);
       await getIdToken(cred.user, true);
-      navigate(nextPath, { replace: true });
+      setAuthNotice('Signed in successfully.');
     } catch (err) {
       setAuthError(humanizeAuthError(err, 'Google sign-in failed.'));
     } finally {
@@ -269,7 +267,7 @@ export default function AuthPortal() {
       }
 
       await getIdToken(userCred.user, true);
-      navigate(nextPath, { replace: true });
+      setAuthNotice('Signed in successfully.');
     } catch (err) {
       setAuthError(humanizeAuthError(err, 'Authentication failed.'));
     } finally {
@@ -338,11 +336,11 @@ export default function AuthPortal() {
             Use your account to unlock Instant Consult messaging and payment verification. Google sign-in works instantly, while email sign-up requires verification.
           </p>
           <Link
-            to={nextPath}
+            to={nextPath || '/'}
             className="mt-6 inline-flex items-center gap-2 rounded-full px-4 py-2 text-[10px] tracking-[0.2em] uppercase hover-feedback"
             style={{ border: '1px solid var(--border2)', color: 'var(--fg2)', background: 'var(--bg-elev)' }}
           >
-            Back to Instant Consult
+            {nextPath ? 'Back to previous page' : 'Stay on this page'}
             <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.9} />
           </Link>
         </div>
@@ -363,17 +361,19 @@ export default function AuthPortal() {
                 <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--accent-text)' }}>You are signed in</p>
                 <h2 className="text-2xl mt-2" style={{ color: 'var(--fg)' }}>{authUser.displayName || authUser.email || 'Member'}</h2>
                 <p className="text-xs mt-2" style={{ color: 'var(--fg2)' }}>
-                  Your account is active. Continue to Instant Consult, or sign out to switch profiles.
+                  Your account is active. Use the app menu to continue, or sign out to switch profiles.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Link
-                    to={nextPath}
-                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] tracking-[0.2em] uppercase hover-feedback"
-                    style={{ background: 'var(--accent)', color: '#fff' }}
-                  >
-                    <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.9} />
-                    Continue
-                  </Link>
+                  {nextPath && (
+                    <Link
+                      to={nextPath}
+                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] tracking-[0.2em] uppercase hover-feedback"
+                      style={{ background: 'var(--accent)', color: '#fff' }}
+                    >
+                      <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.9} />
+                      Continue
+                    </Link>
+                  )}
                   <button
                     type="button"
                     onClick={onAuthSignOut}

@@ -360,6 +360,9 @@ export default function InstantConsult() {
   const chatHeading = isAutoConsult
     ? AUTO_CONSULT_THREAD.heading
     : (selectedType?.label || 'Select a consult type');
+  const paymentTargetLabel = isAutoConsult
+    ? 'Recommended Best Practice'
+    : (selectedType?.label || 'Selected consult');
 
   const bringPaymentIntoView = useCallback(() => {
     const target = paymentCardRef.current;
@@ -1072,11 +1075,11 @@ export default function InstantConsult() {
               </div>
             ) : (
               <div ref={paymentCardRef} className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
-                <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Payment Gate</p>
+                <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Selected Chat Payment</p>
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-xl" style={{ color: 'var(--fg)' }}>{authUser.displayName || authUser.email}</h3>
-                    <p className="text-xs mt-1" style={{ color: 'var(--fg2)' }}>One message unlock per payment.</p>
+                    <h3 className="text-xl" style={{ color: 'var(--fg)' }}>Pay for {paymentTargetLabel}</h3>
+                    <p className="text-xs mt-1" style={{ color: 'var(--fg2)' }}>This QR unlocks one message for the currently selected consult.</p>
                   </div>
                   <button
                     type="button"
@@ -1090,7 +1093,21 @@ export default function InstantConsult() {
                 </div>
 
                 <div className="mt-4 rounded-xl p-4" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
-                  <div className="flex items-center justify-between gap-3">
+                  <div
+                    className="rounded-xl p-4"
+                    style={{
+                      border: `1px solid ${consultAccent}55`,
+                      background: `linear-gradient(140deg, ${consultAccent}16 0%, var(--bg-elev) 72%)`,
+                    }}
+                  >
+                    <p className="text-[10px] tracking-[0.18em] uppercase" style={{ color: consultAccent }}>Paying For</p>
+                    <p className="mt-2 text-lg" style={{ color: 'var(--fg)' }}>{paymentTargetLabel}</p>
+                    <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                      The payment below belongs to this selected chat only.
+                    </p>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between gap-3">
                     <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Payment region</span>
                     <span className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>
                       {countryProfile === 'outside_india' ? 'Disabled' : INSTANT_FEE_LABEL}
@@ -1143,7 +1160,7 @@ export default function InstantConsult() {
                         >
                           <img
                             src={paymentQrSrc}
-                            alt="Instant consult Paytm QR"
+                            alt={`${paymentTargetLabel} payment QR`}
                             className="block w-full h-auto aspect-square object-contain"
                           />
                         </div>
@@ -1156,7 +1173,7 @@ export default function InstantConsult() {
                           style={{ border: '1px solid var(--border2)', color: 'var(--fg2)', background: 'var(--bg-elev)' }}
                         >
                           <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.8} />
-                          Tap for full-size QR
+                          Open larger QR
                         </button>
                       </div>
                     </>
@@ -1605,7 +1622,7 @@ export default function InstantConsult() {
                 </button>
               </div>
               <div className="mt-3 rounded-lg overflow-hidden p-2" style={{ border: '1px solid var(--border2)', background: '#fff' }}>
-                <img src={paymentQrSrc} alt="Full size Instant consult Paytm QR" className="block w-full h-auto" />
+                <img src={paymentQrSrc} alt={`Full size ${paymentTargetLabel} payment QR`} className="block w-full h-auto" />
               </div>
               <p className="mt-3 text-xs" style={{ color: 'var(--fg2)' }}>
                 Keep your screen brightness high while scanning. Unlock happens automatically after payment confirmation.

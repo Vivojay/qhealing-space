@@ -57,6 +57,7 @@ export default function AdminCombinedHealings() {
   const [checkoutFilter, setCheckoutFilter] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -64,6 +65,13 @@ export default function AdminCombinedHealings() {
   const [selectedWishIds, setSelectedWishIds] = useState([]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   const load = useCallback(async ({ keepSelection = true } = {}) => {
     setLoading(true);
@@ -73,7 +81,7 @@ export default function AdminCombinedHealings() {
         status: statusFilter || undefined,
         checkoutStatus: checkoutFilter || undefined,
         countryProfile: countryFilter || undefined,
-        query: query.trim() || undefined,
+        query: debouncedQuery || undefined,
         sortBy,
         sortDir,
         limit: 400,
@@ -95,7 +103,7 @@ export default function AdminCombinedHealings() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, checkoutFilter, countryFilter, query, sortBy, sortDir]);
+  }, [statusFilter, checkoutFilter, countryFilter, debouncedQuery, sortBy, sortDir]);
 
   useEffect(() => {
     load({ keepSelection: false });
@@ -215,68 +223,6 @@ export default function AdminCombinedHealings() {
         </button>
       </div>
 
-      <div className="rounded-2xl p-4 mb-5" style={{ border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-        <div className="grid lg:grid-cols-6 gap-3">
-          <label className="block">
-            <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Search</span>
-            <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ border: '1px solid var(--border2)' }}>
-              <Search className="w-3.5 h-3.5" style={{ color: 'var(--fg3)' }} strokeWidth={1.8} />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} className="bg-transparent border-0 outline-none text-sm w-full" style={{ color: 'var(--fg)' }} placeholder="Name, email, wish..." />
-            </div>
-          </label>
-
-          <label className="block">
-            <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Status</span>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full rounded-lg px-3 py-2 bg-transparent text-sm" style={{ border: '1px solid var(--border2)', color: 'var(--fg)' }}>
-              <option value="">All</option>
-              <option value="draft">Draft</option>
-              <option value="in_review">In review</option>
-              <option value="needs_correction">Needs correction</option>
-              <option value="approved_all">Approved all</option>
-              <option value="checkout_pending">Checkout pending</option>
-              <option value="checkout_paid">Checkout paid</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Checkout</span>
-            <select value={checkoutFilter} onChange={(e) => setCheckoutFilter(e.target.value)} className="w-full rounded-lg px-3 py-2 bg-transparent text-sm" style={{ border: '1px solid var(--border2)', color: 'var(--fg)' }}>
-              <option value="">All</option>
-              <option value="not_started">Not started</option>
-              <option value="awaiting_payment">Awaiting payment</option>
-              <option value="paid">Paid</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Country</span>
-            <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)} className="w-full rounded-lg px-3 py-2 bg-transparent text-sm" style={{ border: '1px solid var(--border2)', color: 'var(--fg)' }}>
-              <option value="">All</option>
-              <option value="india">India</option>
-              <option value="outside_india">Outside India</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Sort by</span>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="w-full rounded-lg px-3 py-2 bg-transparent text-sm" style={{ border: '1px solid var(--border2)', color: 'var(--fg)' }}>
-              <option value="updated_at">Last updated</option>
-              <option value="review_count">Review count</option>
-              <option value="wish_count">Wish count</option>
-              <option value="checkout_status">Checkout status</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Direction</span>
-            <select value={sortDir} onChange={(e) => setSortDir(e.target.value)} className="w-full rounded-lg px-3 py-2 bg-transparent text-sm" style={{ border: '1px solid var(--border2)', color: 'var(--fg)' }}>
-              <option value="desc">Descending</option>
-              <option value="asc">Ascending</option>
-            </select>
-          </label>
-        </div>
-      </div>
-
       {(error || notice) && (
         <div className="mb-5 space-y-2">
           {error && (
@@ -294,7 +240,7 @@ export default function AdminCombinedHealings() {
         </div>
       )}
 
-      <div className="grid xl:grid-cols-[0.95fr_1.05fr] gap-5">
+      <div className="grid xl:grid-cols-[0.82fr_1.08fr_0.56fr] gap-5">
         <div className="rounded-2xl p-4" style={{ border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
           <p className="text-[10px] tracking-[0.25em] uppercase mb-3" style={{ color: 'var(--fg3)' }}>Requests ({rows.length})</p>
           {loading ? (
@@ -468,6 +414,69 @@ export default function AdminCombinedHealings() {
               </div>
             </>
           )}
+        </div>
+
+        <div className="rounded-2xl p-4 h-fit xl:sticky xl:top-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+          <p className="text-[10px] tracking-[0.25em] uppercase mb-3" style={{ color: 'var(--fg3)' }}>Filters</p>
+          <div className="space-y-3">
+            <label className="block">
+              <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Search</span>
+              <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ border: '1px solid var(--border2)' }}>
+                <Search className="w-3.5 h-3.5" style={{ color: 'var(--fg3)' }} strokeWidth={1.8} />
+                <input value={query} onChange={(e) => setQuery(e.target.value)} className="bg-transparent border-0 outline-none text-sm w-full" style={{ color: 'var(--fg)' }} placeholder="Name, email, wish..." />
+              </div>
+            </label>
+
+            <label className="block">
+              <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Status</span>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full rounded-lg px-3 py-2 bg-transparent text-sm" style={{ border: '1px solid var(--border2)', color: 'var(--fg)' }}>
+                <option value="">All</option>
+                <option value="draft">Draft</option>
+                <option value="in_review">In review</option>
+                <option value="needs_correction">Needs correction</option>
+                <option value="approved_all">Approved all</option>
+                <option value="checkout_pending">Checkout pending</option>
+                <option value="checkout_paid">Checkout paid</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Checkout</span>
+              <select value={checkoutFilter} onChange={(e) => setCheckoutFilter(e.target.value)} className="w-full rounded-lg px-3 py-2 bg-transparent text-sm" style={{ border: '1px solid var(--border2)', color: 'var(--fg)' }}>
+                <option value="">All</option>
+                <option value="not_started">Not started</option>
+                <option value="awaiting_payment">Awaiting payment</option>
+                <option value="paid">Paid</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Country</span>
+              <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)} className="w-full rounded-lg px-3 py-2 bg-transparent text-sm" style={{ border: '1px solid var(--border2)', color: 'var(--fg)' }}>
+                <option value="">All</option>
+                <option value="india">India</option>
+                <option value="outside_india">Outside India</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Sort by</span>
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="w-full rounded-lg px-3 py-2 bg-transparent text-sm" style={{ border: '1px solid var(--border2)', color: 'var(--fg)' }}>
+                <option value="updated_at">Last updated</option>
+                <option value="review_count">Review count</option>
+                <option value="wish_count">Wish count</option>
+                <option value="checkout_status">Checkout status</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="block text-[10px] tracking-[0.2em] uppercase mb-1.5" style={{ color: 'var(--fg3)' }}>Direction</span>
+              <select value={sortDir} onChange={(e) => setSortDir(e.target.value)} className="w-full rounded-lg px-3 py-2 bg-transparent text-sm" style={{ border: '1px solid var(--border2)', color: 'var(--fg)' }}>
+                <option value="desc">Descending</option>
+                <option value="asc">Ascending</option>
+              </select>
+            </label>
+          </div>
         </div>
       </div>
     </div>

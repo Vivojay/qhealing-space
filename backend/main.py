@@ -123,6 +123,9 @@ INSTANT_CONSULT_FEE_INR = 1500
 BOOKING_CONSULT_FEE_INR = 2500
 COMBINED_HEALING_FEE_INR_PER_WISH = 5000
 COMBINED_HEALING_FEE_USD_PER_WISH = 80
+SITE_CHAT_COLLECTION = "site_chat_threads"
+SITE_CHAT_MAX_MESSAGES = 120
+SITE_CHAT_MAX_MESSAGE_LENGTH = 2000
 COMBINED_HEALING_MAX_WISHES = max(
     1, min(int(os.environ.get("COMBINED_HEALING_MAX_WISHES", "40")), 120)
 )
@@ -2371,6 +2374,7 @@ async def newsletter_subscribe(body: NewsletterSubscribeRequest) -> dict[str, An
         db = get_firestore()
         coll = db.collection("newsletter_subscribers")
         email_norm = body.email.lower().strip()
+        source = (body.source or "footer").strip() or "footer"
         doc_ref = coll.document(email_norm)
         snap = doc_ref.get()
         if snap.exists:
@@ -2379,11 +2383,12 @@ async def newsletter_subscribe(body: NewsletterSubscribeRequest) -> dict[str, An
         doc_ref.set(
             {
                 "email": email_norm,
-                "source": body.source or "footer",
+                "source": source,
                 "subscribed_at": firestore.SERVER_TIMESTAMP,
             }
         )
         log.info("Newsletter subscriber added: %s", email_norm)
+        _send_newsletter_admin_notification(email_norm, source)
         return {"ok": True, "already_subscribed": False, "email": email_norm}
 
     return await _run_blocking(_op)
@@ -2470,6 +2475,26 @@ class InstantConsultPaymentWebhookRequest(BaseModel):
     provider_payment_id: str | None = Field(default=None, max_length=140)
     provider_event_id: str | None = Field(default=None, max_length=140)
     failure_reason: str | None = Field(default=None, max_length=240)
+
+
+class SiteChatSessionRequest(BaseModel):
+    session_id: str | None = Field(default=None, max_length=96)
+    display_name: str | None = Field(default=None, max_length=120)
+    email: EmailStr | None = None
+
+
+class SiteChatMessageRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=SITE_CHAT_MAX_MESSAGE_LENGTH)
+    display_name: str | None = Field(default=None, max_length=120)
+    email: EmailStr | None = None
+
+
+class SiteChatStatusRequest(BaseModel):
+    status: str = Field(min_length=3, max_length=32)
+
+
+class SiteChatReplyRequest(BaseModel):
+    reply_text: str = Field(min_length=1, max_length=SITE_CHAT_MAX_MESSAGE_LENGTH)
 
 
 class CombinedHealingWishInput(BaseModel):
@@ -2620,6 +2645,172 @@ def _instant_consult_client_email(message_data: dict[str, Any]) -> str:
     )
 
 
+def _normalize_site_chat_status(raw_status: str | None) -> str:
+    status = str(raw_status or "").strip().lower()
+    if status in {"new", "pending", "done"}:
+        return status
+    return "new"
+
+
+def _clean_site_chat_session_id(raw_session_id: str | None) -> str:
+    session_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(raw_session_id or "").strip())
+    if 12 <= len(session_id) <= 96:
+        return session_id
+    return f"sc_{secrets.token_urlsafe(18)}"
+
+
+def _clean_site_chat_name(raw_name: str | None) -> str:
+    value = re.sub(r"\s+", " ", str(raw_name or "").strip())
+    return value[:120] if value else "Website Visitor"
+
+
+def _clean_site_chat_email(raw_email: str | None) -> str:
+    return str(raw_email or "").strip().lower()[:160]
+
+
+def _site_chat_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _site_chat_message_payload(sender: str, text: str, created_at: datetime) -> dict[str, Any]:
+    return {
+        "id": f"msg_{int(created_at.timestamp() * 1000)}_{secrets.token_hex(4)}",
+        "sender": "admin" if sender == "admin" else "client",
+        "text": text.strip(),
+        "created_at": created_at,
+    }
+
+
+def _serialize_site_chat_thread(doc: Any) -> dict[str, Any]:
+    data = doc.to_dict() or {}
+    raw_messages = data.get("messages") if isinstance(data.get("messages"), list) else []
+    messages: list[dict[str, Any]] = []
+    for item in raw_messages:
+        if not isinstance(item, dict):
+            continue
+        sender = "admin" if str(item.get("sender") or "").strip().lower() == "admin" else "client"
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        messages.append(
+            {
+                "id": str(item.get("id") or ""),
+                "sender": sender,
+                "text": text,
+                "created_at": _iso_value(item.get("created_at")),
+            }
+        )
+    messages.sort(key=lambda item: item.get("created_at") or "")
+    updated_at = _iso_value(data.get("updated_at"))
+    last_client_message_at = _iso_value(data.get("last_client_message_at"))
+    last_admin_reply_at = _iso_value(data.get("last_admin_reply_at"))
+    stale_hours = None
+    if updated_at:
+        try:
+            stale_dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            stale_hours = max(
+                0.0,
+                round((_site_chat_now() - stale_dt).total_seconds() / 3600, 2),
+            )
+        except Exception:
+            stale_hours = None
+    return {
+        "id": doc.id,
+        "session_id": str(data.get("session_id") or doc.id),
+        "display_name": _clean_site_chat_name(data.get("display_name")),
+        "email": _clean_site_chat_email(data.get("email")),
+        "status": _normalize_site_chat_status(data.get("status")),
+        "messages": messages,
+        "message_count": len(messages),
+        "latest_message_preview": str(data.get("latest_message_preview") or "").strip(),
+        "transcript_text": str(data.get("transcript_text") or "").strip(),
+        "created_at": _iso_value(data.get("created_at")),
+        "updated_at": updated_at,
+        "last_client_message_at": last_client_message_at,
+        "last_admin_reply_at": last_admin_reply_at,
+        "stale_hours": stale_hours,
+    }
+
+
+def _site_chat_stale_bucket(row: dict[str, Any]) -> str:
+    hours = row.get("stale_hours")
+    if hours is None:
+        return "unknown"
+    if hours < 24:
+        return "fresh_24h"
+    if hours < 72:
+        return "one_to_three_days"
+    return "three_plus_days"
+
+
+def _send_site_chat_admin_notification(row: dict[str, Any]) -> None:
+    preview = str(row.get("latest_message_preview") or "").strip()
+    subject = f"[QHS][Site Chat][NEW] {row.get('display_name') or 'Website Visitor'}"
+    body = (
+        "New floating site chat message received\n\n"
+        f"Client: {row.get('display_name') or 'Website Visitor'}\n"
+        f"Email: {row.get('email') or 'Not provided'}\n"
+        f"Session: {row.get('session_id') or row.get('id')}\n"
+        f"Status: {row.get('status')}\n"
+        f"Updated: {row.get('updated_at') or 'Unknown'}\n\n"
+        "Latest message:\n"
+        f"{preview or '(No preview available)'}\n"
+    )
+    _send_email([ADMIN_ALERT_EMAIL], subject, body)
+
+
+def _send_newsletter_admin_notification(email_norm: str, source: str | None) -> None:
+    subject = "[QHS][Newsletter][NEW] Subscriber added"
+    body = (
+        "A new newsletter subscriber was added.\n\n"
+        f"Email: {email_norm}\n"
+        f"Source: {str(source or 'unknown').strip() or 'unknown'}\n"
+        f"Received at: {datetime.now(timezone.utc).isoformat()}\n"
+    )
+    _send_email([ADMIN_ALERT_EMAIL], subject, body)
+
+
+def _instant_payment_completion_admin_email(session: dict[str, Any]) -> str:
+    return (
+        "Instant Consult payment confirmed\n\n"
+        f"Client: {session.get('display_name') or 'Client'}\n"
+        f"Email: {session.get('email') or 'Unknown'}\n"
+        f"Amount: INR {session.get('amount')}\n"
+        f"Reference: {session.get('payment_reference') or session.get('id')}\n"
+        f"Session: {session.get('id')}\n"
+        f"Paid at: {session.get('paid_at') or session.get('updated_at') or 'Unknown'}\n"
+    )
+
+
+def _instant_payment_completion_client_email(session: dict[str, Any]) -> str:
+    return (
+        "Namaste from Quantum Healing Space,\n\n"
+        "Your Instant Consult payment has been confirmed successfully.\n"
+        "You can now send your message in the selected consult thread.\n\n"
+        f"Amount: INR {session.get('amount')}\n"
+        f"Payment reference: {session.get('payment_reference') or session.get('id')}\n"
+        f"Session ID: {session.get('id')}\n"
+        f"Confirmed at: {session.get('paid_at') or session.get('updated_at') or 'Unknown'}\n\n"
+        "Warmly,\n"
+        "Quantum Healing Space"
+    )
+
+
+def _send_instant_payment_completion_notifications(session: dict[str, Any]) -> None:
+    _send_email(
+        [ADMIN_ALERT_EMAIL],
+        "[QHS][Instant Consult][PAID] Payment confirmed",
+        _instant_payment_completion_admin_email(session),
+    )
+    client_email = str(session.get("email") or "").strip().lower()
+    if client_email:
+        _send_email(
+            [client_email],
+            "[QHS] Instant Consult payment confirmed",
+            _instant_payment_completion_client_email(session),
+        )
+
+
 def _send_instant_consult_notifications(message_data: dict[str, Any]) -> None:
     admin_subject = f"[QHS][Instant Consult][NEW] {message_data.get('type_label') or message_data.get('type_id')}"
     _send_email(
@@ -2638,6 +2829,102 @@ def _send_instant_consult_notifications(message_data: dict[str, Any]) -> None:
 @app.get("/api/consult/types")
 async def consult_types() -> dict[str, Any]:
     return {"data": CONSULT_TYPES}
+
+
+@app.post("/api/site-chat/session")
+async def site_chat_bootstrap_session(body: SiteChatSessionRequest) -> dict[str, Any]:
+    db = get_firestore()
+    session_id = _clean_site_chat_session_id(body.session_id)
+    display_name = _clean_site_chat_name(body.display_name)
+    email = _clean_site_chat_email(body.email)
+    now = _site_chat_now()
+    ref = db.collection(SITE_CHAT_COLLECTION).document(session_id)
+    snap = ref.get()
+    if not snap.exists:
+        ref.set(
+            {
+                "session_id": session_id,
+                "display_name": display_name,
+                "email": email,
+                "status": "new",
+                "messages": [],
+                "latest_message_preview": "",
+                "transcript_text": "",
+                "created_at": now,
+                "updated_at": now,
+                "last_client_message_at": None,
+                "last_admin_reply_at": None,
+            }
+        )
+    else:
+        patch = {"updated_at": now}
+        if display_name and display_name != "Website Visitor":
+            patch["display_name"] = display_name
+        if email:
+            patch["email"] = email
+        ref.set(patch, merge=True)
+    return {"ok": True, "data": _serialize_site_chat_thread(ref.get())}
+
+
+@app.get("/api/site-chat/session/{session_id}")
+async def site_chat_get_session(session_id: str) -> dict[str, Any]:
+    ref = get_firestore().collection(SITE_CHAT_COLLECTION).document(
+        _clean_site_chat_session_id(session_id)
+    )
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(404, "Chat session not found")
+    return {"ok": True, "data": _serialize_site_chat_thread(snap)}
+
+
+@app.post("/api/site-chat/session/{session_id}/messages")
+async def site_chat_send_message(
+    session_id: str, body: SiteChatMessageRequest, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
+    db = get_firestore()
+    safe_session_id = _clean_site_chat_session_id(session_id)
+    ref = db.collection(SITE_CHAT_COLLECTION).document(safe_session_id)
+    snap = ref.get()
+    now = _site_chat_now()
+    display_name = _clean_site_chat_name(body.display_name)
+    email = _clean_site_chat_email(body.email)
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "Message text is required")
+
+    current_data = snap.to_dict() if snap.exists else {}
+    current_messages = (
+        [item for item in current_data.get("messages", []) if isinstance(item, dict)]
+        if isinstance(current_data, dict)
+        else []
+    )
+    next_messages = (
+        current_messages + [_site_chat_message_payload("client", text, now)]
+    )[-SITE_CHAT_MAX_MESSAGES:]
+    transcript_parts = [
+        str(item.get("text") or "").strip()
+        for item in next_messages
+        if str(item.get("text") or "").strip()
+    ]
+    ref.set(
+        {
+            "session_id": safe_session_id,
+            "display_name": display_name
+            or _clean_site_chat_name(current_data.get("display_name")),
+            "email": email or _clean_site_chat_email(current_data.get("email")),
+            "status": "pending",
+            "messages": next_messages,
+            "latest_message_preview": text[:240],
+            "transcript_text": "\n".join(transcript_parts)[-12000:],
+            "updated_at": now,
+            "last_client_message_at": now,
+            "created_at": current_data.get("created_at") or now,
+        },
+        merge=True,
+    )
+    row = _serialize_site_chat_thread(ref.get())
+    background_tasks.add_task(_send_site_chat_admin_notification, row)
+    return {"ok": True, "data": row}
 
 
 @app.get("/api/consult/my-messages")
@@ -2838,6 +3125,7 @@ async def consult_get_payment_session(
 @app.post("/api/payments/webhooks/instant-consult")
 async def consult_payment_webhook(
     body: InstantConsultPaymentWebhookRequest,
+    background_tasks: BackgroundTasks,
     x_qhs_payment_secret: str | None = Header(
         default=None, alias="X-QHS-Payment-Secret"
     ),
@@ -2906,13 +3194,18 @@ async def consult_payment_webhook(
 
     ref.set(patch, merge=True)
     updated = ref.get()
+    serialized = _serialize_payment_session(updated)
+    if next_status == "paid" and current_status != "paid":
+        background_tasks.add_task(
+            _send_instant_payment_completion_notifications, serialized
+        )
     log.info(
         "Instant payment session update: session=%s status=%s provider_payment_id=%s",
         body.session_id,
         next_status,
         (body.provider_payment_id or "").strip() or "-",
     )
-    return {"ok": True, "data": _serialize_payment_session(updated)}
+    return {"ok": True, "data": serialized}
 
 
 @app.post("/api/consult/payments/claim")
@@ -3911,6 +4204,15 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
             if status in consult_counts:
                 consult_counts[status] += 1
 
+    site_chat_counts: dict[str, int] = {"new": 0, "pending": 0, "done": 0}
+    try:
+        docs = db.collection(SITE_CHAT_COLLECTION).stream()
+        for d in docs:
+            status = _normalize_site_chat_status((d.to_dict() or {}).get("status"))
+            site_chat_counts[status] += 1
+    except Exception:
+        pass
+
     combined_counts: dict[str, int] = {
         "draft": 0,
         "in_review": 0,
@@ -3959,6 +4261,12 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
             "total": sum(consult_counts.values()),
             "fee_inr": INSTANT_CONSULT_FEE_INR,
         },
+        "site_chat": {
+            "new": site_chat_counts["new"],
+            "pending": site_chat_counts["pending"],
+            "done": site_chat_counts["done"],
+            "total": sum(site_chat_counts.values()),
+        },
         "combined_healings": {
             **combined_counts,
             "total": sum(combined_counts.values()),
@@ -3966,6 +4274,14 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
             "total_review_count": combined_total_review_count,
             "fee_inr_per_wish": COMBINED_HEALING_FEE_INR_PER_WISH,
             "fee_usd_per_wish": COMBINED_HEALING_FEE_USD_PER_WISH,
+        },
+        "admin_badges": {
+            "newsletter": sub_count,
+            "instant_consult": consult_counts["new"] + consult_counts["inprogress"],
+            "site_chat": site_chat_counts["new"] + site_chat_counts["pending"],
+            "combined_healings": combined_counts["in_review"]
+            + combined_counts["needs_correction"]
+            + combined_checkout_counts["awaiting_payment"],
         },
         "firebase_configured": bool(os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")),
         "config_present": True,
@@ -4166,6 +4482,124 @@ async def admin_list_consult_messages(
     return {"data": rows, "count": len(rows)}
 
 
+@app.get("/api/admin/site-chat/threads")
+async def admin_list_site_chat_threads(
+    status: str | None = None,
+    query: str | None = None,
+    stale: str | None = None,
+    sort_by: str = "updated_at",
+    sort_dir: str = "desc",
+    limit: int = 250,
+    _=Depends(require_admin),
+) -> dict[str, Any]:
+    safe_limit = max(1, min(limit, 500))
+    docs = list(get_firestore().collection(SITE_CHAT_COLLECTION).limit(safe_limit).stream())
+    rows = [_serialize_site_chat_thread(doc) for doc in docs]
+
+    status_filter = _normalize_site_chat_status(status) if status else None
+    if status_filter:
+        rows = [row for row in rows if row.get("status") == status_filter]
+
+    clean_query = str(query or "").strip().lower()
+    if clean_query:
+        rows = [
+            row
+            for row in rows
+            if any(
+                clean_query in str(value or "").lower()
+                for value in (
+                    row.get("display_name"),
+                    row.get("email"),
+                    row.get("latest_message_preview"),
+                    row.get("transcript_text"),
+                )
+            )
+        ]
+
+    stale_filter = str(stale or "").strip().lower()
+    if stale_filter:
+        rows = [
+            row for row in rows if _site_chat_stale_bucket(row) == stale_filter
+        ]
+
+    reverse = str(sort_dir or "").strip().lower() != "asc"
+    allowed_sort_keys = {
+        "updated_at": lambda row: row.get("updated_at") or "",
+        "created_at": lambda row: row.get("created_at") or "",
+        "last_client_message_at": lambda row: row.get("last_client_message_at") or "",
+        "last_admin_reply_at": lambda row: row.get("last_admin_reply_at") or "",
+        "display_name": lambda row: str(row.get("display_name") or "").lower(),
+        "message_count": lambda row: int(row.get("message_count") or 0),
+    }
+    sort_key = allowed_sort_keys.get(sort_by, allowed_sort_keys["updated_at"])
+    rows.sort(key=sort_key, reverse=reverse)
+    return {"data": rows[:safe_limit], "count": len(rows)}
+
+
+@app.put("/api/admin/site-chat/threads/{session_id}")
+async def admin_update_site_chat_thread(
+    session_id: str,
+    body: SiteChatStatusRequest,
+    _=Depends(require_admin),
+) -> dict[str, Any]:
+    ref = get_firestore().collection(SITE_CHAT_COLLECTION).document(
+        _clean_site_chat_session_id(session_id)
+    )
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(404, "Chat thread not found")
+    ref.set(
+        {
+            "status": _normalize_site_chat_status(body.status),
+            "updated_at": _site_chat_now(),
+        },
+        merge=True,
+    )
+    return {"ok": True, "data": _serialize_site_chat_thread(ref.get())}
+
+
+@app.post("/api/admin/site-chat/threads/{session_id}/reply")
+async def admin_reply_site_chat_thread(
+    session_id: str,
+    body: SiteChatReplyRequest,
+    _=Depends(require_admin),
+) -> dict[str, Any]:
+    ref = get_firestore().collection(SITE_CHAT_COLLECTION).document(
+        _clean_site_chat_session_id(session_id)
+    )
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(404, "Chat thread not found")
+    current = snap.to_dict() or {}
+    current_messages = (
+        [item for item in current.get("messages", []) if isinstance(item, dict)]
+        if isinstance(current.get("messages"), list)
+        else []
+    )
+    now = _site_chat_now()
+    clean_reply = body.reply_text.strip()
+    next_messages = (
+        current_messages + [_site_chat_message_payload("admin", clean_reply, now)]
+    )[-SITE_CHAT_MAX_MESSAGES:]
+    transcript_parts = [
+        str(item.get("text") or "").strip()
+        for item in next_messages
+        if str(item.get("text") or "").strip()
+    ]
+    ref.set(
+        {
+            "messages": next_messages,
+            "status": "done",
+            "latest_message_preview": clean_reply[:240],
+            "transcript_text": "\n".join(transcript_parts)[-12000:],
+            "updated_at": now,
+            "last_admin_reply_at": now,
+        },
+        merge=True,
+    )
+    return {"ok": True, "data": _serialize_site_chat_thread(ref.get())}
+
+
 @app.put("/api/admin/consult/messages/{message_id}")
 async def admin_update_consult_message(
     message_id: str,
@@ -4266,16 +4700,53 @@ async def admin_list_combined_healings_requests(
 ) -> dict[str, Any]:
     safe_limit = max(1, min(limit, 500))
     rows: list[dict[str, Any]] = []
+    db = get_firestore()
+    docs = list(db.collection(COMBINED_HEALING_COLLECTION).limit(safe_limit).stream())
 
-    docs = list(
-        get_firestore()
-        .collection(COMBINED_HEALING_COLLECTION)
-        .limit(safe_limit)
-        .stream()
-    )
+    if not docs:
+        # Fallback for older or partially-migrated data shapes where wishes exist but
+        # the top-level request collection is sparse or stored under a legacy parent.
+        request_refs_by_path: dict[str, Any] = {}
+        try:
+            wish_docs = list(
+                db.collection_group(COMBINED_HEALING_WISHES_SUBCOLLECTION)
+                .limit(max(safe_limit * 10, 100))
+                .stream()
+            )
+        except Exception:
+            wish_docs = []
+
+        for wish_doc in wish_docs:
+            parent_ref = wish_doc.reference.parent.parent
+            if parent_ref is None:
+                continue
+            request_refs_by_path[parent_ref.path] = parent_ref
+
+        docs = []
+        for request_ref in request_refs_by_path.values():
+            snap = request_ref.get()
+            if snap.exists:
+                docs.append(snap)
+            if len(docs) >= safe_limit:
+                break
+
+    if not docs:
+        legacy_collection_names = (
+            "combined_healings_requests",
+            "combined_healing_request",
+        )
+        for legacy_name in legacy_collection_names:
+            try:
+                docs = list(db.collection(legacy_name).limit(safe_limit).stream())
+            except Exception:
+                docs = []
+            if docs:
+                break
+
     for doc in docs:
-        uid = str(doc.id)
-        wish_docs = list(_combined_wishes_collection(uid).stream())
+        wish_docs = list(
+            doc.reference.collection(COMBINED_HEALING_WISHES_SUBCOLLECTION).stream()
+        )
         wishes = [_serialize_combined_wish(item) for item in wish_docs]
         rows.append(_serialize_combined_request(doc, wishes))
 

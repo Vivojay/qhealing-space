@@ -381,7 +381,7 @@ function InternationalRails() {
 export default function Booking() {
   const [searchParams] = useSearchParams();
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', country: 'India', service: '', format: '', startDate: '', endDate: '', notes: '',
+    phone: '', country: 'India', service: '', format: '', startDate: '', endDate: '', notes: '',
   });
   const [submitted, setSubmitted] = useState(false);
   const [showQr, setShowQr] = useState(false);
@@ -416,9 +416,7 @@ export default function Booking() {
   const handleSubmit = (e) => {
     e.preventDefault();
     const lines = [
-      `Name: ${form.name}`,
       `Country: ${form.country}`,
-      `Email: ${form.email}`,
       `Phone/WhatsApp: ${form.phone}`,
       `Service: ${form.service}`,
       `Format: ${form.format}`,
@@ -553,15 +551,6 @@ export default function Booking() {
             </motion.div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-9">
-              <div className="grid sm:grid-cols-2 gap-9">
-                <Field label="Full Name *">
-                  <input required value={form.name} onChange={set('name')} style={inputStyle} placeholder="Your full name" />
-                </Field>
-                <Field label="Email *">
-                  <input required type="email" value={form.email} onChange={set('email')} style={inputStyle} placeholder="your@email.com" />
-                </Field>
-              </div>
-
               <div className="grid sm:grid-cols-2 gap-9">
                 <Field label="Country *">
                   <select required value={form.country} onChange={set('country')} style={{ ...inputStyle, cursor: 'pointer' }}>
