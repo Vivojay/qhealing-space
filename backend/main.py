@@ -77,6 +77,8 @@ _combined_events_cache: dict[str, Any] = {
     "data": None,
 }
 _COMBINED_EVENTS_TTL = 12 * 60 * 60  # 12 hours
+_combined_events_refresh_lock = asyncio.Lock()
+_combined_events_refresh_task: asyncio.Task[Any] | None = None
 
 
 async def _run_blocking(func, *args, **kwargs):
@@ -1427,6 +1429,27 @@ def _get_cached_combined_events(limit: int) -> list[dict[str, Any]]:
     return list(rows)[:safe_limit]
 
 
+async def _read_combined_events_cache(limit: int) -> dict[str, Any] | None:
+    try:
+        data = await _load_combined_events_cache_doc()
+    except Exception:
+        log.exception("combined-healings event cache read failed")
+        return None
+    if not data:
+        return None
+    rows = list(data.get("rows") or [])
+    if not rows and _combined_events_cache.get("data"):
+        rows = list(_combined_events_cache.get("data") or [])
+    if not rows:
+        return None
+    payload = dict(data)
+    payload["rows"] = rows
+    payload["count"] = len(rows)
+    if _combined_events_cache_is_fresh(payload):
+        return _combined_events_cache_response(payload, limit)
+    return _combined_events_cache_response(payload, limit)
+
+
 def _combined_international_payment_message(service_name: str) -> str:
     rails = ", ".join(
         str(item.get("name") or "").strip()
@@ -2089,6 +2112,9 @@ async def _instagram_warning_loop() -> None:
 
 CONFIG_DOC = ("site_config", "main")
 CURATION_DOC = ("instagram_curation", "main")
+COMBINED_EVENTS_CACHE_DOC = ("system_cache", "combined_healings_events")
+COMBINED_EVENTS_CACHE_VERSION = 2
+COMBINED_EVENTS_CACHE_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_CONFIG = {
     "instagram_handle": "quantum_healingspace",
     "instagram_section_enabled": True,
@@ -2108,6 +2134,85 @@ def _set_doc(coll: str, doc: str, data: dict[str, Any]) -> None:
     get_firestore().collection(coll).document(doc).set(data, merge=True)
 
 
+def _combined_events_cache_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    now_ms = int(now.timestamp() * 1000)
+    return {
+        "version": COMBINED_EVENTS_CACHE_VERSION,
+        "rows": rows,
+        "count": len(rows),
+        "generated_at": now,
+        "generated_at_epoch_ms": now_ms,
+        "expires_at_epoch_ms": now_ms + COMBINED_EVENTS_CACHE_TTL_SECONDS * 1000,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+        "source": "panchang+formula+cache",
+    }
+
+
+def _combined_events_cache_is_fresh(data: dict[str, Any] | None) -> bool:
+    if not data:
+        return False
+    try:
+        generated_at_ms = int(data.get("generated_at_epoch_ms") or 0)
+    except Exception:
+        generated_at_ms = 0
+    if not generated_at_ms:
+        return False
+    return (int(time.time() * 1000) - generated_at_ms) < COMBINED_EVENTS_CACHE_TTL_SECONDS * 1000
+
+
+def _combined_events_cache_response(data: dict[str, Any], limit: int) -> dict[str, Any]:
+    rows = list(data.get("rows") or [])
+    safe_limit = _safe_limit(limit, 1, 25)
+    return {
+        "ok": True,
+        "data": rows[:safe_limit],
+        "count": min(len(rows), safe_limit),
+        "source": str(data.get("source") or "firestore-cache"),
+        "cached": True,
+        "generated_at": _iso_value(data.get("generated_at")),
+        "expires_at": datetime.fromtimestamp(
+            int(data.get("expires_at_epoch_ms") or 0) / 1000, tz=timezone.utc
+        ).isoformat()
+        if int(data.get("expires_at_epoch_ms") or 0)
+        else None,
+    }
+
+
+async def _load_combined_events_cache_doc() -> dict[str, Any]:
+    return await _run_blocking(
+        _get_doc, *COMBINED_EVENTS_CACHE_DOC
+    )
+
+
+async def _write_combined_events_cache(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    payload = _combined_events_cache_payload(rows)
+    await _run_blocking(_set_doc, *COMBINED_EVENTS_CACHE_DOC, payload)
+    _combined_events_cache["data"] = rows
+    _combined_events_cache["ts"] = time.time()
+    return payload
+
+
+async def _refresh_combined_events_cache(*, force: bool = False) -> dict[str, Any]:
+    async with _combined_events_refresh_lock:
+        if not force:
+            cached = await _load_combined_events_cache_doc()
+            if _combined_events_cache_is_fresh(cached):
+                rows = list(cached.get("rows") or [])
+                _combined_events_cache["data"] = rows
+                _combined_events_cache["ts"] = time.time()
+                return cached
+        rows = await _run_blocking(_build_combined_events, 25)
+        return await _write_combined_events_cache(rows)
+
+
+async def _ensure_combined_events_cache_async(*, force: bool = False) -> None:
+    try:
+        await _refresh_combined_events_cache(force=force)
+    except Exception:
+        log.exception("combined-healings cache warmup failed")
+
+
 # ─────────────────────────── FastAPI app ───────────────────────────
 
 app = FastAPI(title="QHS Backend", version="1.1.0")
@@ -2122,7 +2227,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def _startup_background_tasks() -> None:
-    global _instagram_warning_task
+    global _instagram_warning_task, _combined_events_refresh_task
     if os.environ.get("DISABLE_INSTAGRAM_WARNING_LOOP", "").strip().lower() in {
         "1",
         "true",
@@ -2133,11 +2238,15 @@ async def _startup_background_tasks() -> None:
         return
     if _instagram_warning_task is None:
         _instagram_warning_task = asyncio.create_task(_instagram_warning_loop())
+    if _combined_events_refresh_task is None or _combined_events_refresh_task.done():
+        _combined_events_refresh_task = asyncio.create_task(
+            _ensure_combined_events_cache_async(force=False)
+        )
 
 
 @app.on_event("shutdown")
 async def _shutdown_background_tasks() -> None:
-    global _instagram_warning_task
+    global _instagram_warning_task, _combined_events_refresh_task
     if _instagram_warning_task:
         _instagram_warning_task.cancel()
         try:
@@ -2145,6 +2254,13 @@ async def _shutdown_background_tasks() -> None:
         except asyncio.CancelledError:
             pass
         _instagram_warning_task = None
+    if _combined_events_refresh_task:
+        _combined_events_refresh_task.cancel()
+        try:
+            await _combined_events_refresh_task
+        except asyncio.CancelledError:
+            pass
+        _combined_events_refresh_task = None
 
 
 @app.exception_handler(gcloud_exc.PermissionDenied)
@@ -2288,11 +2404,29 @@ async def geo_country_hint(request: Request) -> dict[str, Any]:
 @app.get("/api/combined-healings/events")
 async def combined_healings_events(limit: int = 10) -> dict[str, Any]:
     try:
-        rows = await _run_blocking(_get_cached_combined_events, limit)
+        safe_limit = _safe_limit(limit, 1, 25)
+        cached = await _read_combined_events_cache(safe_limit)
+        if cached:
+            if not _combined_events_cache_is_fresh(await _load_combined_events_cache_doc()):
+                asyncio.create_task(_ensure_combined_events_cache_async(force=True))
+            return cached
+        if _combined_events_cache.get("data"):
+            return {
+                "ok": True,
+                "data": list(_combined_events_cache.get("data") or [])[:safe_limit],
+                "count": min(len(_combined_events_cache.get("data") or []), safe_limit),
+                "source": "memory-cache",
+                "cached": True,
+            }
+        asyncio.create_task(_ensure_combined_events_cache_async(force=True))
+        rows = await _run_blocking(_build_combined_events, 25)
+        await _write_combined_events_cache(rows)
         return {
-            "data": rows,
-            "count": len(rows),
+            "ok": True,
+            "data": rows[:safe_limit],
+            "count": min(len(rows), safe_limit),
             "source": "panchang+formula+cache",
+            "cached": False,
         }
     except Exception as exc:
         log.exception("combined-healings/events failed")
@@ -2569,10 +2703,12 @@ async def consult_payment_capabilities(
 @app.post("/api/admin/combined-healings/events/refresh")
 async def admin_refresh_combined_events(_=Depends(require_admin)) -> dict[str, Any]:
     try:
-        rows = await _run_blocking(_build_combined_events, 25)
-        _combined_events_cache["data"] = rows
-        _combined_events_cache["ts"] = time.time()
-        return {"ok": True, "count": len(rows)}
+        payload = await _refresh_combined_events_cache(force=True)
+        return {
+            "ok": True,
+            "count": int(payload.get("count") or 0),
+            "generated_at": _iso_value(payload.get("generated_at")),
+        }
     except Exception as exc:
         log.exception("admin refresh combined events failed")
         raise HTTPException(500, f"combined-healings event refresh failed: {exc}")
