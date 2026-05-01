@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import {
+  AlertCircle,
   ArrowUpRight,
   CheckCircle2,
   Clock3,
@@ -8,6 +10,8 @@ import {
   LogOut,
   Plus,
   RefreshCw,
+  ShieldCheck,
+  Sparkles,
   Trash2,
   WalletCards,
 } from 'lucide-react';
@@ -17,62 +21,23 @@ import { apiUrl, createPageUrl } from '@/utils';
 import { firebaseAuth, firebaseConfigured } from '@/lib/firebaseClient';
 import { PRICING } from '@/constants/pricing';
 
-const OUTSIDE_NOTICE = 'International checkout is currently visible but disabled. Use India-side rails (Wise/Remitly/Western Union) and contact support for confirmation.';
 const MAX_WISH_LEN = 200;
-const EVENTS_CACHE_KEY = 'combined_healings_events_cache';
-const EVENTS_CACHE_VERSION = 'v1';
-
-function getEventsCache() {
-  if (typeof window === 'undefined') return null;
-  try {
-    const cached = localStorage.getItem(EVENTS_CACHE_KEY);
-    if (!cached) return null;
-    const parsed = JSON.parse(cached);
-    if (!parsed.data || !parsed.fetchedAt || !parsed.nextRefreshDate) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function setEventsCache(data, nextRefreshDate) {
-  if (typeof window === 'undefined') return;
-  try {
-    const cache = {
-      version: EVENTS_CACHE_VERSION,
-      fetchedAt: new Date().toISOString(),
-      nextRefreshDate: nextRefreshDate,
-      data: data,
-    };
-    localStorage.setItem(EVENTS_CACHE_KEY, JSON.stringify(cache));
-  } catch {}
-}
-
-function shouldRefreshEvents(nextRefreshDate) {
-  if (!nextRefreshDate) return true;
-  const today = new Date().toISOString().slice(0, 10);
-  return today >= nextRefreshDate;
-}
-
-function computeNextRefreshDates(eventDates) {
-  if (!Array.isArray(eventDates) || eventDates.length === 0) return null;
-  const refreshDates = eventDates.map((date) => {
-    const d = new Date(date);
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
-  });
-  return refreshDates.sort();
-}
-
-function getEarliestRefreshDate(refreshDates) {
-  if (!Array.isArray(refreshDates) || refreshDates.length === 0) return null;
-  return refreshDates.sort()[0];
-}
+const MAX_WISHES = 40;
 const DEFAULT_OUTSIDE_RAILS = [
   { id: 'wise', name: 'Wise', detail: 'Best for direct bank transfer into India.' },
   { id: 'remitly', name: 'Remitly', detail: 'Fast INR settlement to India account rails.' },
   { id: 'western-union', name: 'Western Union', detail: 'Global transfer rails with India payout support.' },
 ];
+const OUTSIDE_NOTICE = 'International checkout is currently disabled. Use the listed India-side rails and contact support for confirmation.';
+const SURFACE_STYLE = { border: '1px solid var(--border2)', background: 'var(--bg-elev)' };
+
+function nextWishId() {
+  return `wish_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createEmptyWish() {
+  return { id: nextWishId(), text: '', status: 'draft', admin_note: '' };
+}
 
 function isUnverifiedPasswordUser(user) {
   if (!user) return false;
@@ -93,25 +58,114 @@ async function parseApiError(res) {
   return `HTTP ${res.status}`;
 }
 
-function statusToken(status) {
+function normalizeWish(wish) {
+  return {
+    id: String(wish?.id || nextWishId()),
+    text: String(wish?.text || ''),
+    status: String(wish?.status || 'draft').toLowerCase(),
+    admin_note: String(wish?.admin_note || ''),
+  };
+}
+
+function resolveApiMediaSrc(pathOrUrl) {
+  const value = String(pathOrUrl || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  return apiUrl(value);
+}
+
+function normalizeCheckoutSession(session, fallbackProfile = 'india') {
+  if (!session) return null;
+  const qrSrc = String(session?.qr_src || '').trim();
+  return {
+    id: String(session?.id || ''),
+    status: String(session?.status || 'awaiting_payment').toLowerCase(),
+    amount: Number(session?.amount || 0),
+    currency: String(session?.currency || (fallbackProfile === 'outside_india' ? 'USD' : 'INR')),
+    wish_count: Number(session?.wish_count || 0),
+    selected_wish_ids: Array.isArray(session?.selected_wish_ids)
+      ? session.selected_wish_ids.map((item) => String(item).trim()).filter(Boolean)
+      : [],
+    request_id: String(session?.request_id || ''),
+    country_profile: String(session?.country_profile || fallbackProfile || 'india').toLowerCase() === 'outside_india'
+      ? 'outside_india'
+      : 'india',
+    qr_src: resolveApiMediaSrc(qrSrc),
+    upi_intent: String(session?.upi_intent || ''),
+    expires_at: String(session?.expires_at || ''),
+    paid_at: String(session?.paid_at || ''),
+  };
+}
+
+function buildEventPayload(event) {
+  if (!event) {
+    return {
+      ritual_event_id: null,
+      ritual_event_date: null,
+      ritual_event_label: null,
+      ritual_hindu_lunar_label: null,
+    };
+  }
+  return {
+    ritual_event_id: String(event.id || '').trim() || null,
+    ritual_event_date: String(event.date || '').trim() || null,
+    ritual_event_label: String(event.label || '').trim() || null,
+    ritual_hindu_lunar_label: String(event?.hindu_lunar?.label || '').trim() || null,
+  };
+}
+
+function draftFingerprintFromState({ selectedEventId, countryProfile, countryCode, wishes }) {
+  return JSON.stringify({
+    ritual_event_id: String(selectedEventId || ''),
+    country_profile: String(countryProfile || 'india'),
+    country_code: String(countryCode || '').trim().toUpperCase(),
+    wishes: wishes.map((wish) => ({
+      id: String(wish.id || ''),
+      text: String(wish.text || '').trim(),
+    })),
+  });
+}
+
+function draftFingerprintFromRow(row) {
+  if (!row) return '';
+  const wishes = Array.isArray(row?.wishes) ? row.wishes : [];
+  return JSON.stringify({
+    ritual_event_id: String(row?.ritual_event_id || ''),
+    country_profile: String(row?.country_profile || 'india'),
+    country_code: String(row?.country_code || '').trim().toUpperCase(),
+    wishes: wishes.map((wish) => ({
+      id: String(wish?.id || ''),
+      text: String(wish?.text || '').trim(),
+    })),
+  });
+}
+
+function selectionSignature(ids, countryProfile) {
+  const normalizedIds = Array.isArray(ids)
+    ? ids.map((item) => String(item).trim()).filter(Boolean).sort()
+    : [];
+  return `${String(countryProfile || 'india')}::${normalizedIds.join('|')}`;
+}
+
+function toneForWishStatus(status) {
   const normalized = String(status || 'draft').toLowerCase();
   if (normalized === 'approved') {
     return {
       label: 'Approved',
       style: {
-        background: 'rgba(38,132,86,0.16)',
-        color: '#63E6A8',
-        border: '1px solid rgba(99,230,168,0.35)',
+        background: 'rgba(67,154,106,0.16)',
+        color: '#7DE5B1',
+        border: '1px solid rgba(99,230,168,0.34)',
       },
     };
   }
   if (normalized === 'needs_correction') {
     return {
-      label: 'Needs correction',
+      label: 'Needs Correction',
       style: {
-        background: 'rgba(224,138,111,0.15)',
-        color: '#E8A58D',
-        border: '1px solid rgba(232,165,141,0.34)',
+        background: 'rgba(224,138,111,0.14)',
+        color: '#F2B199',
+        border: '1px solid rgba(224,138,111,0.34)',
       },
     };
   }
@@ -119,33 +173,51 @@ function statusToken(status) {
     return {
       label: 'Corrected',
       style: {
-        background: 'rgba(148,111,224,0.16)',
-        color: '#C7B3FF',
-        border: '1px solid rgba(199,179,255,0.36)',
+        background: 'rgba(139,111,213,0.16)',
+        color: '#D3C3FF',
+        border: '1px solid rgba(173,145,255,0.34)',
       },
     };
   }
   if (normalized === 'in_review') {
     return {
-      label: 'In review',
+      label: 'In Review',
       style: {
-        background: 'rgba(168,126,47,0.16)',
-        color: '#F4D08F',
-        border: '1px solid rgba(244,208,143,0.35)',
+        background: 'rgba(171,130,51,0.16)',
+        color: '#F5D07D',
+        border: '1px solid rgba(245,208,125,0.34)',
       },
     };
   }
   return {
     label: 'Draft',
     style: {
-      background: 'rgba(75,121,184,0.14)',
+      background: 'rgba(95,124,165,0.16)',
       color: '#A6CBF5',
-      border: '1px solid rgba(166,203,245,0.3)',
+      border: '1px solid rgba(160,191,233,0.3)',
     },
   };
 }
 
-function formatTotal(amount, countryProfile) {
+function toneForRequestStatus(status) {
+  const normalized = String(status || 'draft').toLowerCase();
+  if (normalized === 'checkout_paid') return toneForWishStatus('approved');
+  if (normalized === 'checkout_pending') return toneForWishStatus('in_review');
+  if (normalized === 'approved_all') return toneForWishStatus('approved');
+  if (normalized === 'needs_correction') return toneForWishStatus('needs_correction');
+  if (normalized === 'in_review') return toneForWishStatus('in_review');
+  return toneForWishStatus('draft');
+}
+
+function toneForCheckoutStatus(status) {
+  const normalized = String(status || 'not_started').toLowerCase();
+  if (normalized === 'paid') return toneForWishStatus('approved');
+  if (normalized === 'awaiting_payment') return toneForWishStatus('in_review');
+  if (normalized === 'failed' || normalized === 'expired') return toneForWishStatus('needs_correction');
+  return toneForWishStatus('draft');
+}
+
+function formatMoney(amount, countryProfile) {
   if (countryProfile === 'outside_india') {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -160,238 +232,368 @@ function formatTotal(amount, countryProfile) {
   }).format(amount);
 }
 
-function nextLocalWishId() {
-  return `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+function combinedAmountForProfile(countryProfile, wishCount) {
+  const safeCount = Math.max(0, Number(wishCount || 0));
+  return safeCount * (
+    countryProfile === 'outside_india'
+      ? PRICING.combinedHealings.international.amount
+      : PRICING.combinedHealings.india.amount
+  );
+}
+
+function StatusBadge({ meta }) {
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] tracking-[0.14em] uppercase"
+      style={meta.style}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
+function MetricPill({ label, value, accent = 'var(--accent-text)' }) {
+  return (
+    <div className="rounded-full px-3 py-2" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
+      <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: 'var(--fg3)' }}>{label}</p>
+      <p className="mt-1 text-sm" style={{ color: accent }}>{value}</p>
+    </div>
+  );
+}
+
+function SectionCard({ children, className = '' }) {
+  return (
+    <div className={`rounded-[28px] p-5 lg:p-6 ${className}`} style={SURFACE_STYLE}>
+      {children}
+    </div>
+  );
+}
+
+function StepCard({ index, title, copy }) {
+  return (
+    <div className="rounded-2xl p-4 h-full" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
+      <p className="text-[10px] tracking-[0.22em] uppercase" style={{ color: 'var(--accent-text)' }}>0{index}</p>
+      <h3 className="mt-3 text-lg" style={{ color: 'var(--fg)' }}>{title}</h3>
+      <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--fg2)' }}>{copy}</p>
+    </div>
+  );
 }
 
 export default function CombinedHealings() {
   const navigate = useNavigate();
+  const paymentCardRef = useRef(null);
+  const qrScrollRef = useRef('');
+  const checkoutSyncRequestRef = useRef(0);
+  const qrImageCacheRef = useRef(new Map());
+
   const [events, setEvents] = useState([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState('');
 
   const [geoLoading, setGeoLoading] = useState(true);
-  const [countryCode, setCountryCode] = useState('IN');
   const [countryProfile, setCountryProfile] = useState('india');
+  const [countryCode, setCountryCode] = useState('IN');
 
   const [authUser, setAuthUser] = useState(null);
   const [idToken, setIdToken] = useState('');
-  const [loadingRequest, setLoadingRequest] = useState(false);
 
   const [requestRow, setRequestRow] = useState(null);
+  const [loadingRequest, setLoadingRequest] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState('');
-  const [wishes, setWishes] = useState([{ id: nextLocalWishId(), text: '', status: 'draft', admin_note: '' }]);
+  const [wishes, setWishes] = useState([createEmptyWish()]);
   const [selectedWishIds, setSelectedWishIds] = useState([]);
-
-  const [wishFilter, setWishFilter] = useState('all');
-  const [saving, setSaving] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
-  const [clientReviewPending, setClientReviewPending] = useState(false);
 
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
-  const [checkoutStarting, setCheckoutStarting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+
+  const [checkoutSession, setCheckoutSession] = useState(null);
+  const [checkoutSyncing, setCheckoutSyncing] = useState(false);
   const [checkoutRefreshing, setCheckoutRefreshing] = useState(false);
-  const [checkoutSessionId, setCheckoutSessionId] = useState('');
-  const [checkoutSessionStatus, setCheckoutSessionStatus] = useState('');
-  const [checkoutWishCount, setCheckoutWishCount] = useState(0);
-  const [checkoutQrSrc, setCheckoutQrSrc] = useState('');
-  const [checkoutUpiIntent, setCheckoutUpiIntent] = useState('');
   const [checkoutNotice, setCheckoutNotice] = useState('');
   const [checkoutRails, setCheckoutRails] = useState(DEFAULT_OUTSIDE_RAILS);
-
-  const paymentCardRef = useRef(null);
+  const [checkoutQrDisplaySrc, setCheckoutQrDisplaySrc] = useState('');
 
   const emailVerificationPending = useMemo(() => isUnverifiedPasswordUser(authUser), [authUser]);
-
   const selectedEvent = useMemo(
     () => events.find((item) => item.id === selectedEventId) || null,
     [events, selectedEventId],
   );
 
-  const wishCount = wishes.length;
-  const wishUnitPrice = countryProfile === 'outside_india'
+  const unitPrice = countryProfile === 'outside_india'
     ? PRICING.combinedHealings.international.amount
     : PRICING.combinedHealings.india.amount;
-  const wishUnitLabel = countryProfile === 'outside_india'
+  const unitLabel = countryProfile === 'outside_india'
     ? PRICING.combinedHealings.international.label
     : PRICING.combinedHealings.india.label;
-  const selectedCount = useMemo(
-    () => selectedWishIds.filter((sid) => wishes.some((w) => w.id === sid)).length,
-    [selectedWishIds, wishes],
+
+  const approvedWishIds = useMemo(
+    () => wishes.filter((wish) => String(wish.status || '').toLowerCase() === 'approved').map((wish) => wish.id),
+    [wishes],
   );
-  const checkoutTotal = wishUnitPrice * selectedCount;
-  const checkoutTotalLabel = formatTotal(checkoutTotal, countryProfile);
+  const approvedWishIdSet = useMemo(() => new Set(approvedWishIds), [approvedWishIds]);
 
-  const allApproved = useMemo(
-    () => wishCount > 0 && wishes.every((wish) => String(wish.status || '').toLowerCase() === 'approved'),
-    [wishCount, wishes],
+  useEffect(() => {
+    setSelectedWishIds((prev) => prev.filter((id) => approvedWishIdSet.has(id)));
+  }, [approvedWishIdSet]);
+
+  const selectedApprovedWishIds = useMemo(
+    () => selectedWishIds.filter((id) => approvedWishIdSet.has(id)),
+    [selectedWishIds, approvedWishIdSet],
   );
 
-  const canSubmitReview = useMemo(() => {
-    if (!authUser || emailVerificationPending) return false;
-    if (!selectedEvent) return false;
-    if (!wishes.length) return false;
-    if (allApproved) return false;
-    if (clientReviewPending) return false;
-    return wishes.every((wish) => wish.text.trim().length > 0 && wish.text.trim().length <= MAX_WISH_LEN);
-  }, [authUser, emailVerificationPending, selectedEvent, wishes, allApproved, clientReviewPending]);
+  const requestStatusMeta = useMemo(
+    () => toneForRequestStatus(requestRow?.status || 'draft'),
+    [requestRow],
+  );
+  const checkoutStatusMeta = useMemo(
+    () => toneForCheckoutStatus(checkoutSession?.status || requestRow?.checkout_status || 'not_started'),
+    [checkoutSession, requestRow],
+  );
 
-  const selectedWishesApproved = useMemo(() => {
-    if (!selectedWishIds.length) return false;
-    return selectedWishIds.every((sid) => {
-      const w = wishes.find((item) => item.id === sid);
-      return w && String(w.status || '').toLowerCase() === 'approved';
-    });
-  }, [selectedWishIds, wishes]);
+  const totalLabel = useMemo(
+    () => formatMoney(unitPrice * selectedApprovedWishIds.length, countryProfile),
+    [unitPrice, selectedApprovedWishIds.length, countryProfile],
+  );
+  const expectedCheckoutAmount = unitPrice * selectedApprovedWishIds.length;
 
-  const canCheckout = useMemo(() => {
-    if (!authUser || emailVerificationPending) return false;
-    if (!selectedEvent) return false;
-    if (!selectedWishesApproved) return false;
-    if (countryProfile === 'outside_india') return false;
-    if (!selectedCount) return false;
-    return true;
-  }, [authUser, emailVerificationPending, selectedEvent, selectedWishesApproved, countryProfile, selectedCount]);
+  const draftFingerprint = useMemo(
+    () => draftFingerprintFromState({
+      selectedEventId,
+      countryProfile,
+      countryCode,
+      wishes,
+    }),
+    [selectedEventId, countryProfile, countryCode, wishes],
+  );
+  const serverFingerprint = useMemo(
+    () => draftFingerprintFromRow(requestRow),
+    [requestRow],
+  );
+  const hasUnsavedChanges = Boolean(idToken) && draftFingerprint !== serverFingerprint;
 
-  const displayedWishes = useMemo(() => {
-    if (wishFilter === 'all') return wishes;
-    return wishes.filter((wish) => String(wish.status || '').toLowerCase() === wishFilter);
-  }, [wishFilter, wishes]);
+  const checkoutSelectionSig = useMemo(
+    () => selectionSignature(selectedApprovedWishIds, countryProfile),
+    [selectedApprovedWishIds, countryProfile],
+  );
+  const sessionSelectionSig = useMemo(
+    () => selectionSignature(checkoutSession?.selected_wish_ids || [], checkoutSession?.country_profile || countryProfile),
+    [checkoutSession, countryProfile],
+  );
 
-  const resetCheckoutState = () => {
-    setCheckoutSessionId('');
-    setCheckoutSessionStatus('');
-    setCheckoutQrSrc('');
-    setCheckoutUpiIntent('');
-    setCheckoutNotice('');
-  };
+  const checkoutCompleted = String(checkoutSession?.status || requestRow?.checkout_status || '').toLowerCase() === 'paid';
+  const checkoutSessionReady = Boolean(checkoutSession?.id && checkoutSession?.qr_src);
+  const checkoutSessionMatches = useMemo(() => {
+    if (!checkoutSession?.id) return false;
+    if (checkoutCompleted) return true;
+    return (
+      checkoutSelectionSig === sessionSelectionSig
+      && expectedCheckoutAmount === Number(checkoutSession?.amount || 0)
+      && countryProfile === (checkoutSession?.country_profile || countryProfile)
+    );
+  }, [checkoutCompleted, checkoutSelectionSig, sessionSelectionSig, expectedCheckoutAmount, checkoutSession, countryProfile]);
+
+  const allWishTextValid = useMemo(
+    () => wishes.length > 0 && wishes.every((wish) => {
+      const trimmed = String(wish.text || '').trim();
+      return trimmed.length > 0 && trimmed.length <= MAX_WISH_LEN;
+    }),
+    [wishes],
+  );
+
+  const canSave = Boolean(
+    authUser
+    && !emailVerificationPending
+    && !checkoutCompleted
+    && allWishTextValid
+    && !saving
+    && !reviewing
+    && !cancelling
+    && hasUnsavedChanges
+  );
+
+  const canSubmitReview = Boolean(
+    authUser
+    && !emailVerificationPending
+    && !checkoutCompleted
+    && !requestRow?.client_review_pending
+    && allWishTextValid
+    && selectedEvent
+    && !saving
+    && !reviewing
+    && !cancelling
+  );
+
+  const checkoutBlockedReason = useMemo(() => {
+    if (!authUser || emailVerificationPending) return 'Authenticate first to unlock checkout.';
+    if (checkoutCompleted) return 'Checkout already confirmed for this request.';
+    if (!selectedEvent) return 'Choose a ritual date before checkout.';
+    if (!allWishTextValid) return 'Every wish must be filled before checkout sync.';
+    if (hasUnsavedChanges) return 'Save your latest request changes before checkout.';
+    if (countryProfile === 'outside_india') return OUTSIDE_NOTICE;
+    if (!selectedApprovedWishIds.length) return 'Select at least one approved wish to generate a QR.';
+    if (loadingRequest || saving || reviewing || cancelling || checkoutSyncing) return 'Wait for current sync to finish.';
+    return '';
+  }, [
+    authUser,
+    emailVerificationPending,
+    checkoutCompleted,
+    selectedEvent,
+    allWishTextValid,
+    hasUnsavedChanges,
+    countryProfile,
+    selectedApprovedWishIds.length,
+    loadingRequest,
+    saving,
+    reviewing,
+    cancelling,
+    checkoutSyncing,
+  ]);
+
+  const canGenerateCheckout = checkoutBlockedReason === '';
 
   const nudgeAuth = useCallback((mode = 'signup') => {
+    const normalizedMode = mode === 'login' ? 'login' : 'signup';
     const nextPath = createPageUrl('Combined Healings');
-    const normalized = mode === 'login' ? 'login' : 'signup';
-    navigate(`/auth?mode=${normalized}&next=${encodeURIComponent(nextPath)}`);
+    navigate(`/auth?mode=${normalizedMode}&next=${encodeURIComponent(nextPath)}`);
   }, [navigate]);
 
-  const EVENTS_CACHE_KEY = 'combined_healings_events_cache';
+  const applyRequestRow = useCallback((row, { preserveSelection = true } = {}) => {
+    setRequestRow(row || null);
 
-  const getCachedEvents = () => {
-    try {
-      const cached = localStorage.getItem(EVENTS_CACHE_KEY);
-      if (!cached) return null;
-      const parsed = JSON.parse(cached);
-      if (!parsed?.data || !Array.isArray(parsed.data)) return null;
-      return parsed;
-    } catch {
-      return null;
+    if (!row) {
+      setWishes([createEmptyWish()]);
+      setSelectedWishIds([]);
+      setCheckoutSession(null);
+      setCheckoutNotice('');
+      return;
     }
-  };
 
-  const getRefreshDatesFromEvents = (rows) => {
-    const dates = rows
-      .map((e) => e?.date)
-      .filter(Boolean)
-      .sort();
-    return dates.map((d) => {
-      try {
-        const dateObj = new Date(d);
-        dateObj.setDate(dateObj.getDate() + 1);
-        return dateObj.toISOString().split('T')[0];
-      } catch {
-        return null;
-      }
-    }).filter(Boolean);
-  };
+    const nextWishes = Array.isArray(row?.wishes) && row.wishes.length
+      ? row.wishes.map(normalizeWish)
+      : [createEmptyWish()];
+    setWishes(nextWishes);
 
-  const shouldRefreshEvents = (cached) => {
-    if (!cached?.nextRefreshDates?.length) return true;
-    const today = new Date().toISOString().split('T')[0];
-    return cached.nextRefreshDates.some((d) => today >= d);
-  };
-
-  const fetchEvents = (useCache = true) => {
-    const cached = getCachedEvents();
-    if (useCache && cached && !shouldRefreshEvents(cached)) {
-      setEvents(cached.data);
-      setSelectedEventId((prev) => prev || cached.data[0]?.id || '');
-      setEventsLoading(false);
-      return Promise.resolve();
+    if (row?.ritual_event_id) {
+      setSelectedEventId(String(row.ritual_event_id));
     }
-    return fetch(apiUrl('/api/combined-healings/events?limit=5'))
-      .then(async (res) => {
-        if (!res.ok) throw new Error(await parseApiError(res));
-        return res.json();
-      })
-      .then((payload) => {
-        const rows = Array.isArray(payload?.data) ? payload.data : [];
-        const refreshDates = getRefreshDatesFromEvents(rows);
-        const cacheData = { data: rows, nextRefreshDates: refreshDates, cachedAt: new Date().toISOString() };
-        try {
-          localStorage.setItem(EVENTS_CACHE_KEY, JSON.stringify(cacheData));
-        } catch {}
-        setEvents(rows);
-        setSelectedEventId((prev) => prev || rows[0]?.id || '');
-      })
-      .catch((err) => {
-        if (cached?.data) {
-          setEvents(cached.data);
-          setSelectedEventId((prev) => prev || cached.data[0]?.id || '');
-        } else {
-          setEvents([]);
-          setEventsError(err.message || 'Unable to load ritual events right now.');
-        }
-      });
-  };
+    if (row?.country_profile) {
+      setCountryProfile(String(row.country_profile).toLowerCase() === 'outside_india' ? 'outside_india' : 'india');
+    }
+    if (row?.country_code) {
+      setCountryCode(String(row.country_code).trim().toUpperCase());
+    }
 
-  useEffect(() => {
-    let cancelled = false;
+    const approvedIds = nextWishes
+      .filter((wish) => String(wish.status || '').toLowerCase() === 'approved')
+      .map((wish) => wish.id);
+
+    setSelectedWishIds((prev) => {
+      const validPrev = preserveSelection
+        ? prev.filter((id) => approvedIds.includes(id))
+        : [];
+      const restored = Array.isArray(row?.checkout_selected_wish_ids)
+        ? row.checkout_selected_wish_ids.map((item) => String(item)).filter((id) => approvedIds.includes(id))
+        : [];
+      if (validPrev.length) return validPrev;
+      if (restored.length) return restored;
+      return approvedIds;
+    });
+
+    const existingSessionId = String(row?.checkout_session_id || '');
+    if (!existingSessionId) {
+      setCheckoutSession(null);
+      return;
+    }
+
+    setCheckoutSession((prev) => normalizeCheckoutSession({
+      id: existingSessionId,
+      status: row?.checkout_status || prev?.status || 'awaiting_payment',
+      amount: prev?.id === existingSessionId
+        ? prev.amount
+        : combinedAmountForProfile(row?.country_profile || 'india', row?.checkout_wish_count || 0),
+      currency: prev?.id === existingSessionId ? prev.currency : (row?.country_profile === 'outside_india' ? 'USD' : 'INR'),
+      wish_count: Number(row?.checkout_wish_count || 0),
+      selected_wish_ids: Array.isArray(row?.checkout_selected_wish_ids) ? row.checkout_selected_wish_ids : [],
+      request_id: String(row?.checkout_request_id || ''),
+      country_profile: row?.country_profile || prev?.country_profile || 'india',
+      qr_src: prev?.id === existingSessionId ? prev.qr_src : '',
+      upi_intent: prev?.id === existingSessionId ? prev.upi_intent : '',
+      expires_at: prev?.id === existingSessionId ? prev.expires_at : '',
+      paid_at: row?.checkout_paid_at || prev?.paid_at || '',
+    }, row?.country_profile || 'india'));
+  }, []);
+
+  const loadEvents = useCallback(async () => {
     setEventsLoading(true);
     setEventsError('');
-    fetchEvents(true)
-      .finally(() => {
-        if (!cancelled) setEventsLoading(false);
-      });
-    return () => { cancelled = true; };
+    try {
+      const res = await fetch(apiUrl('/api/combined-healings/events?limit=5'));
+      if (!res.ok) throw new Error(await parseApiError(res));
+      const payload = await res.json();
+      const rows = Array.isArray(payload?.data) ? payload.data : [];
+      setEvents(rows);
+    } catch (err) {
+      setEvents([]);
+      setEventsError(err.message || 'Unable to load ritual dates right now.');
+    } finally {
+      setEventsLoading(false);
+    }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch(apiUrl('/api/geo/country'))
-      .then(async (res) => {
-        if (!res.ok) throw new Error(await parseApiError(res));
-        return res.json();
-      })
-      .then((payload) => {
-        if (cancelled) return;
-        const profile = String(payload?.country_profile || '').trim().toLowerCase();
-        setCountryProfile(profile === 'outside_india' ? 'outside_india' : 'india');
-        setCountryCode(String(payload?.country_code || 'IN').trim().toUpperCase() || 'IN');
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCountryProfile('india');
-          setCountryCode('IN');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setGeoLoading(false);
-      });
-    return () => { cancelled = true; };
+  const loadGeoHint = useCallback(async () => {
+    setGeoLoading(true);
+    try {
+      const res = await fetch(apiUrl('/api/geo/country'));
+      if (!res.ok) throw new Error(await parseApiError(res));
+      const payload = await res.json();
+      const profile = String(payload?.country_profile || '').trim().toLowerCase();
+      const code = String(payload?.country_code || 'IN').trim().toUpperCase() || 'IN';
+      setCountryProfile(profile === 'outside_india' ? 'outside_india' : 'india');
+      setCountryCode(code);
+    } catch {
+      setCountryProfile('india');
+      setCountryCode('IN');
+    } finally {
+      setGeoLoading(false);
+    }
   }, []);
 
+  const loadMyRequest = useCallback(async ({ quiet = false, preserveSelection = true } = {}) => {
+    if (!idToken) return null;
+    if (!quiet) {
+      setLoadingRequest(true);
+      setError('');
+    }
+    try {
+      const res = await fetch(apiUrl('/api/combined-healings/my-request'), {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!res.ok) throw new Error(await parseApiError(res));
+      const payload = await res.json();
+      const row = payload?.data || null;
+      applyRequestRow(row, { preserveSelection });
+      return row;
+    } catch (err) {
+      if (!quiet) setError(err.message || 'Unable to load your Combined Healings request.');
+      return null;
+    } finally {
+      if (!quiet) setLoadingRequest(false);
+    }
+  }, [idToken, applyRequestRow]);
+
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.hidden) return;
-      const cached = getCachedEvents();
-      if (cached && shouldRefreshEvents(cached)) {
-        fetchEvents(false).then(() => setEventsLoading(false));
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
+    loadEvents();
+    loadGeoHint();
+  }, [loadEvents, loadGeoHint]);
+
+  useEffect(() => {
+    if (selectedEventId || !events.length) return;
+    setSelectedEventId(String(events[0].id || ''));
+  }, [events, selectedEventId]);
 
   useEffect(() => {
     if (!firebaseConfigured || !firebaseAuth) {
@@ -399,6 +601,7 @@ export default function CombinedHealings() {
       setIdToken('');
       return undefined;
     }
+
     const unsub = onAuthStateChanged(firebaseAuth, async (user) => {
       setAuthUser(user || null);
       if (user && !isUnverifiedPasswordUser(user)) {
@@ -411,84 +614,74 @@ export default function CombinedHealings() {
     return () => unsub();
   }, []);
 
-  const loadMyRequest = useCallback(async (tokenOverride) => {
-    const token = tokenOverride || idToken;
-    if (!token) return;
-    setLoadingRequest(true);
-    setError('');
-    try {
-      const res = await fetch(apiUrl('/api/combined-healings/my-request'), {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(await parseApiError(res));
-      const payload = await res.json();
-      const row = payload?.data || null;
-      setRequestRow(row);
-      setClientReviewPending(Boolean(row?.client_review_pending));
-      if (row?.country_profile) {
-        setCountryProfile(row.country_profile === 'outside_india' ? 'outside_india' : 'india');
-      }
-      if (row?.country_code) {
-        setCountryCode(String(row.country_code).trim().toUpperCase());
-      }
-      if (row?.ritual_event_id) {
-        setSelectedEventId(row.ritual_event_id);
-      }
-      const serverWishes = Array.isArray(row?.wishes) ? row.wishes : [];
-      const serverWishIds = serverWishes.map((wish) => String(wish.id)).filter(Boolean);
-      const currentWishIds = wishes.map((w) => w.id).filter(Boolean);
-      const wishIdsChanged = JSON.stringify(serverWishIds.sort()) !== JSON.stringify(currentWishIds.sort());
-      if (serverWishes.length) {
-        setWishes(serverWishes.map((wish) => ({
-          id: String(wish.id),
-          text: String(wish.text || ''),
-          status: String(wish.status || 'draft'),
-          admin_note: String(wish.admin_note || ''),
-        })));
-        if (wishIdsChanged) {
-          setSelectedWishIds((prev) => {
-            const validPrev = prev.filter((id) => serverWishIds.includes(id));
-            return validPrev.length > 0 ? validPrev : serverWishIds;
-          });
-        }
-      } else {
-        setWishes([{ id: nextLocalWishId(), text: '', status: 'draft', admin_note: '' }]);
-        setSelectedWishIds([]);
-      }
-      if (row?.checkout_session_id) {
-        setCheckoutSessionId(String(row.checkout_session_id));
-        setCheckoutWishCount(parseInt(String(row.checkout_wish_count || '0'), 10) || 0);
-      } else {
-        setCheckoutSessionId('');
-        setCheckoutWishCount(0);
-      }
-      if (row?.checkout_status === 'paid') {
-        setCheckoutSessionStatus('paid');
-        setCheckoutNotice('Checkout is already paid and confirmed.');
-      }
-    } catch (err) {
-      setError(err.message || 'Unable to load your combined-healings request.');
-    } finally {
-      setLoadingRequest(false);
-    }
-  }, [idToken]);
-
   useEffect(() => {
     if (!idToken || emailVerificationPending) return;
-    loadMyRequest(idToken);
+    loadMyRequest();
   }, [idToken, emailVerificationPending, loadMyRequest]);
 
   useEffect(() => {
     if (!idToken || !requestRow) return undefined;
-    if (document.hidden) return undefined;
+    if (typeof document !== 'undefined' && document.hidden) return undefined;
     const timer = setInterval(() => {
-      loadMyRequest(idToken);
-    }, 8000);
+      loadMyRequest({ quiet: true });
+    }, 10000);
     return () => clearInterval(timer);
-}, [idToken, requestRow, loadMyRequest]);
+  }, [idToken, requestRow, loadMyRequest]);
+
+  const persistRequest = useCallback(async ({ silent = false } = {}) => {
+    if (!idToken) return null;
+    if (!silent) {
+      setSaving(true);
+      setError('');
+      setNotice('');
+    }
+
+    try {
+      if (!allWishTextValid) {
+        throw new Error(`Each wish must be filled and stay within ${MAX_WISH_LEN} characters.`);
+      }
+
+      const eventPayload = buildEventPayload(selectedEvent);
+      const res = await fetch(apiUrl('/api/combined-healings/my-request'), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          ...eventPayload,
+          country_profile: countryProfile,
+          country_code: countryCode,
+          wishes: wishes.map((wish) => ({
+            id: wish.id,
+            text: String(wish.text || '').trim(),
+          })),
+        }),
+      });
+      if (!res.ok) throw new Error(await parseApiError(res));
+      const payload = await res.json();
+      const row = payload?.data || null;
+      applyRequestRow(row);
+      if (!silent) setNotice('Request saved. Checkout can only use the synced server state.');
+      return row;
+    } catch (err) {
+      if (!silent) setError(err.message || 'Unable to save your request right now.');
+      throw err;
+    } finally {
+      if (!silent) setSaving(false);
+    }
+  }, [
+    idToken,
+    allWishTextValid,
+    selectedEvent,
+    countryProfile,
+    countryCode,
+    wishes,
+    applyRequestRow,
+  ]);
 
   const refreshCheckoutSession = useCallback(async (sessionId, { quiet = false } = {}) => {
-    if (!idToken || !sessionId) return;
+    if (!idToken || !sessionId) return null;
     if (!quiet) setCheckoutRefreshing(true);
     try {
       const res = await fetch(apiUrl(`/api/combined-healings/my-request/checkout/session/${encodeURIComponent(sessionId)}`), {
@@ -496,517 +689,864 @@ export default function CombinedHealings() {
       });
       if (!res.ok) throw new Error(await parseApiError(res));
       const payload = await res.json();
-      const session = payload?.data || {};
-      const status = String(session.status || 'awaiting_payment');
-      setCheckoutSessionStatus(status);
-      if (session.qr_src) setCheckoutQrSrc(apiUrl(session.qr_src));
-      if (session.upi_intent) setCheckoutUpiIntent(session.upi_intent);
-      if (status === 'paid') {
-        setCheckoutNotice('Checkout payment confirmed.');
-        await loadMyRequest(idToken);
+      const session = normalizeCheckoutSession(payload?.data, countryProfile);
+      setCheckoutSession(session);
+
+      if (session?.status === 'paid') {
+        setCheckoutNotice('Payment confirmed. Approved wishes are now locked.');
+        await loadMyRequest({ quiet: true, preserveSelection: false });
+      } else if (session?.status === 'expired') {
+        setCheckoutNotice('The checkout session expired. Generate a fresh QR to continue.');
+      } else if (session?.status === 'failed') {
+        setCheckoutNotice('The checkout session failed. Generate a fresh QR to continue.');
       }
+      return session;
     } catch (err) {
-      if (!quiet) setCheckoutNotice(err.message || 'Unable to refresh checkout status.');
+      if (!quiet) setCheckoutNotice(err.message || 'Unable to refresh checkout state.');
+      return null;
     } finally {
       if (!quiet) setCheckoutRefreshing(false);
     }
-  }, [idToken, loadMyRequest]);
+  }, [idToken, countryProfile, loadMyRequest]);
 
-  useEffect(() => {
-    if (!checkoutSessionId || !idToken || checkoutSessionStatus === 'paid') return;
-    if (document.hidden) return undefined;
-    const timer = setInterval(() => {
-      refreshCheckoutSession(checkoutSessionId, { quiet: true });
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [checkoutSessionId, checkoutSessionStatus, idToken, refreshCheckoutSession]);
+  const syncCheckoutSession = useCallback(async ({ reason = 'manual' } = {}) => {
+    if (!idToken) return null;
+    if (!canGenerateCheckout) return null;
 
-  useEffect(() => {
-    if (!checkoutSessionId || checkoutSessionStatus === 'paid') return;
-    if (!selectedCount || !idToken) return;
-    if (document.hidden) return;
-    const currentSessionWishCount = checkoutWishCount || parseInt(String(requestRow?.checkout_wish_count || '0'), 10);
-    if (currentSessionWishCount === selectedCount) return;
-    const timer = setTimeout(async () => {
-      try {
-        resetCheckoutState();
-      } catch {}
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [selectedCount, checkoutSessionId, checkoutSessionStatus, idToken, requestRow, checkoutWishCount]);
-
-  const startCheckout = async () => {
-    if (!idToken || checkoutStarting) return;
-    if (!canCheckout) return;
-    setCheckoutStarting(true);
+    const requestNumber = checkoutSyncRequestRef.current + 1;
+    checkoutSyncRequestRef.current = requestNumber;
+    setCheckoutSyncing(true);
+    setCheckoutNotice(
+      reason === 'selection'
+        ? 'Selection changed. Regenerating QR to match the latest approved total.'
+        : 'Creating checkout session and QR for the current approved selection.',
+    );
     setError('');
     setNotice('');
-    setCheckoutNotice('');
+    setCheckoutSession((prev) => (prev ? { ...prev, qr_src: '', upi_intent: '' } : prev));
+
     try {
-      if (checkoutSessionId) {
-        resetCheckoutState();
+      let row = requestRow;
+      if (hasUnsavedChanges || !row) {
+        row = await persistRequest({ silent: true });
       }
-      await persistRequest({ silent: true });
+
+      const sourceWishes = Array.isArray(row?.wishes) ? row.wishes.map(normalizeWish) : wishes;
+      const approvedNow = selectedWishIds.filter((id) => {
+        const match = sourceWishes.find((wish) => wish.id === id);
+        return match && String(match.status || '').toLowerCase() === 'approved';
+      });
+      if (!approvedNow.length) {
+        throw new Error('Select at least one approved wish to create the checkout QR.');
+      }
+
       const res = await fetch(apiUrl('/api/combined-healings/my-request/checkout/session'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ 
-          country_profile: countryProfile, 
+        body: JSON.stringify({
+          country_profile: countryProfile,
           country_code: countryCode,
-          selected_wish_ids: selectedWishIds,
+          selected_wish_ids: approvedNow,
+          request_id: checkoutSession?.request_id || row?.checkout_request_id || undefined,
         }),
       });
       if (!res.ok) throw new Error(await parseApiError(res));
+
       const payload = await res.json();
-      const session = payload?.data || {};
-      setCheckoutSessionId(String(session.id || ''));
-      setCheckoutSessionStatus(String(session.status || 'awaiting_payment'));
-      setCheckoutQrSrc(session?.qr_src ? apiUrl(session.qr_src) : '');
-      setCheckoutUpiIntent(String(session?.upi_intent || ''));
-      setCheckoutRails(Array.isArray(payload?.international_rails) ? payload.international_rails : []);
-      setCheckoutNotice(payload?.client_notice || 'Checkout session started.');
-      await loadMyRequest(idToken);
+      if (checkoutSyncRequestRef.current !== requestNumber) return null;
+
+      setCheckoutRails(Array.isArray(payload?.international_rails) && payload.international_rails.length
+        ? payload.international_rails
+        : DEFAULT_OUTSIDE_RAILS);
+
+      const session = normalizeCheckoutSession(payload?.data, countryProfile);
+      setCheckoutSession(session);
+      setCheckoutNotice(payload?.client_notice || 'Checkout session ready.');
+      await loadMyRequest({ quiet: true, preserveSelection: false });
+      return session;
     } catch (err) {
-      setCheckoutNotice(err.message || 'Unable to start checkout right now.');
+      if (checkoutSyncRequestRef.current === requestNumber) {
+        setCheckoutNotice(err.message || 'Unable to sync checkout QR.');
+      }
+      return null;
     } finally {
-      setCheckoutStarting(false);
+      if (checkoutSyncRequestRef.current === requestNumber) {
+        setCheckoutSyncing(false);
+      }
     }
-  };
+  }, [
+    idToken,
+    canGenerateCheckout,
+    requestRow,
+    hasUnsavedChanges,
+    persistRequest,
+    wishes,
+    selectedWishIds,
+    countryProfile,
+    countryCode,
+    checkoutSession,
+    loadMyRequest,
+  ]);
+
+  useEffect(() => {
+    if (checkoutCompleted) return undefined;
+    if (!canGenerateCheckout) return undefined;
+    if (countryProfile !== 'india') return undefined;
+    if (checkoutSession?.id && checkoutSessionMatches) return undefined;
+
+    setCheckoutSession((prev) => (prev ? { ...prev, qr_src: '', upi_intent: '' } : prev));
+    const timer = setTimeout(() => {
+      syncCheckoutSession({ reason: 'selection' });
+    }, 320);
+    return () => clearTimeout(timer);
+  }, [
+    checkoutCompleted,
+    canGenerateCheckout,
+    checkoutSession?.id,
+    countryProfile,
+    checkoutSessionMatches,
+    syncCheckoutSession,
+  ]);
+
+  useEffect(() => {
+    if (!checkoutSession?.id || checkoutCompleted) return;
+    if (countryProfile === 'india' && selectedApprovedWishIds.length > 0 && !hasUnsavedChanges) return;
+    setCheckoutSession((prev) => (prev ? { ...prev, qr_src: '', upi_intent: '' } : prev));
+  }, [
+    checkoutSession?.id,
+    checkoutCompleted,
+    countryProfile,
+    selectedApprovedWishIds.length,
+    hasUnsavedChanges,
+  ]);
+
+  useEffect(() => {
+    if (!checkoutSession?.id || !idToken) return undefined;
+    if (['paid', 'failed', 'expired'].includes(String(checkoutSession.status || ''))) return undefined;
+    if (!checkoutCompleted && sessionSelectionSig !== checkoutSelectionSig) return undefined;
+
+    refreshCheckoutSession(checkoutSession.id, { quiet: true });
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      refreshCheckoutSession(checkoutSession.id, { quiet: true });
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [
+    checkoutSession?.id,
+    checkoutSession?.status,
+    idToken,
+    refreshCheckoutSession,
+    checkoutCompleted,
+    sessionSelectionSig,
+    checkoutSelectionSig,
+  ]);
+
+  useEffect(() => {
+    const src = String(checkoutSession?.qr_src || '').trim();
+    if (!src) {
+      setCheckoutQrDisplaySrc('');
+      return undefined;
+    }
+
+    const cached = qrImageCacheRef.current.get(src);
+    if (cached) {
+      setCheckoutQrDisplaySrc(cached);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setCheckoutQrDisplaySrc(src);
+
+    fetch(src)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => {
+        if (cancelled) return;
+        const objectUrl = URL.createObjectURL(blob);
+        qrImageCacheRef.current.set(src, objectUrl);
+        setCheckoutQrDisplaySrc(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setCheckoutQrDisplaySrc(src);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkoutSession?.qr_src]);
+
+  useEffect(() => () => {
+    qrImageCacheRef.current.forEach((value) => {
+      try {
+        URL.revokeObjectURL(value);
+      } catch {}
+    });
+    qrImageCacheRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    if (!checkoutSession?.id || !checkoutSession?.qr_src) return;
+    const qrKey = `${checkoutSession.id}:${checkoutSession.qr_src}`;
+    if (qrScrollRef.current === qrKey) return;
+    qrScrollRef.current = qrKey;
+    paymentCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [checkoutSession?.id, checkoutSession?.qr_src]);
+
+  const onAddWish = useCallback(() => {
+    if (checkoutCompleted || wishes.length >= MAX_WISHES) return;
+    setWishes((prev) => [...prev, createEmptyWish()]);
+  }, [checkoutCompleted, wishes.length]);
+
+  const onRemoveWish = useCallback((wishId) => {
+    if (checkoutCompleted || wishes.length <= 1) return;
+    setWishes((prev) => prev.filter((wish) => wish.id !== wishId));
+    setSelectedWishIds((prev) => prev.filter((id) => id !== wishId));
+  }, [checkoutCompleted, wishes.length]);
+
+  const onWishTextChange = useCallback((wishId, text) => {
+    if (checkoutCompleted) return;
+    setWishes((prev) => prev.map((wish) => (
+      wish.id === wishId ? { ...wish, text } : wish
+    )));
+  }, [checkoutCompleted]);
+
+  const onToggleCheckoutWish = useCallback((wishId) => {
+    if (checkoutCompleted || !approvedWishIdSet.has(wishId)) return;
+    setSelectedWishIds((prev) => (
+      prev.includes(wishId)
+        ? prev.filter((id) => id !== wishId)
+        : [...prev, wishId]
+    ));
+  }, [checkoutCompleted, approvedWishIdSet]);
+
+  const saveNow = useCallback(async () => {
+    await persistRequest({ silent: false });
+  }, [persistRequest]);
+
+  const submitReview = useCallback(async () => {
+    if (!idToken) return;
+    setReviewing(true);
+    setError('');
+    setNotice('');
+    try {
+      const row = await persistRequest({ silent: true });
+      const eventPayload = buildEventPayload(selectedEvent || {
+        id: row?.ritual_event_id,
+        date: row?.ritual_event_date,
+        label: row?.ritual_event_label,
+        hindu_lunar: { label: row?.ritual_hindu_lunar_label },
+      });
+
+      const res = await fetch(apiUrl('/api/combined-healings/my-request/review'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(eventPayload),
+      });
+      if (!res.ok) throw new Error(await parseApiError(res));
+      const payload = await res.json();
+      applyRequestRow(payload?.data || null, { preserveSelection: false });
+      setNotice(payload?.client_notice || 'Review submitted. Wait for admin approval or correction notes.');
+    } catch (err) {
+      setError(err.message || 'Unable to submit this request for review.');
+    } finally {
+      setReviewing(false);
+    }
+  }, [idToken, persistRequest, selectedEvent, applyRequestRow]);
+
+  const cancelRequest = useCallback(async () => {
+    if (!idToken) return;
+    setCancelling(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await fetch(apiUrl('/api/combined-healings/my-request/cancel'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!res.ok) throw new Error(await parseApiError(res));
+      applyRequestRow(null);
+      setNotice('Combined Healings request cancelled and removed.');
+    } catch (err) {
+      setError(err.message || 'Unable to cancel this request right now.');
+    } finally {
+      setCancelling(false);
+    }
+  }, [idToken, applyRequestRow]);
+
+  const onSignOut = useCallback(async () => {
+    if (!firebaseAuth) return;
+    await signOut(firebaseAuth).catch(() => {});
+    setAuthUser(null);
+    setIdToken('');
+    setRequestRow(null);
+    setWishes([createEmptyWish()]);
+    setSelectedWishIds([]);
+    setCheckoutSession(null);
+    setCheckoutNotice('');
+    setNotice('');
+    setError('');
+  }, []);
 
   return (
     <div style={{ background: 'var(--bg)' }}>
-      <section className="relative overflow-hidden py-16 lg:py-20" style={{ borderBottom: '1px solid var(--border)' }}>
-        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 82% 20%, rgba(107,160,204,0.14), transparent 52%)' }} />
+      <section className="relative overflow-hidden pt-20 pb-14 lg:pt-24 lg:pb-18" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: `
+              radial-gradient(circle at 16% 18%, rgba(224,106,106,0.16), transparent 30%),
+              radial-gradient(circle at 82% 16%, rgba(107,160,204,0.18), transparent 34%),
+              linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.02) 100%)
+            `,
+          }}
+        />
         <div className="max-w-7xl mx-auto px-6 lg:px-12 relative">
-          <p className="text-[10px] tracking-[0.42em] uppercase mb-5" style={{ color: 'var(--accent-text)' }}>
+          <p className="text-[10px] tracking-[0.42em] uppercase" style={{ color: 'var(--accent-text)' }}>
             Combined Healings
           </p>
-          <h1 className="hero-display text-5xl lg:text-7xl" style={{ color: 'var(--fg)' }}>
-            One ritual date,
-            <span style={{ color: 'var(--accent-text)', marginLeft: '0.35ch' }}>many wishes.</span>
-          </h1>
-          <p className="mt-6 max-w-3xl text-sm lg:text-[15px] font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
-            Build your wish list, choose an upcoming sacred date, and move through review cycles until every wish is approved for checkout.
-          </p>
-          {!authUser && (
-            <div className="mt-6">
-              <button
-                type="button"
-                onClick={() => nudgeAuth('signup')}
-                className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[10px] tracking-[0.22em] uppercase"
-                style={{ background: 'var(--special-accent)', color: '#fff' }}
-              >
-                Sign up to unlock
-                <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={1.9} />
-              </button>
+          <div className="mt-5 grid lg:grid-cols-[1.05fr_0.95fr] gap-8 items-end">
+            <div>
+              <h1 className="hero-display text-5xl lg:text-7xl" style={{ color: 'var(--fg)' }}>
+                One ritual date,
+                <span style={{ color: 'var(--special-accent)', marginLeft: '0.34ch' }}>many wishes.</span>
+              </h1>
+              <p className="mt-6 max-w-3xl text-sm lg:text-[15px] leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                Build your wish list, submit it for review, then generate a QR that is always tied to the current approved selection and current total. If the total changes, the old QR is cleared and recreated.
+              </p>
             </div>
-          )}
+
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+              className="rounded-[28px] p-5"
+              style={{
+                border: '1px solid var(--border2)',
+                background: 'linear-gradient(180deg, color-mix(in srgb, var(--bg-elev) 92%, transparent), color-mix(in srgb, var(--bg) 90%, transparent))',
+                boxShadow: '0 28px 70px -50px rgba(0,0,0,0.8)',
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] tracking-[0.22em] uppercase" style={{ color: 'var(--fg3)' }}>Live Checkout Rule</p>
+                  <p className="mt-2 text-lg" style={{ color: 'var(--fg)' }}>QR must match the approved total.</p>
+                </div>
+                <div
+                  className="w-12 h-12 rounded-full inline-flex items-center justify-center"
+                  style={{ background: 'var(--special-bg)', border: '1px solid var(--special-border)' }}
+                >
+                  <ShieldCheck className="w-5 h-5" style={{ color: 'var(--special-accent)' }} strokeWidth={1.9} />
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <MetricPill label="Price" value={unitLabel} accent="var(--fg)" />
+                <MetricPill label="Selected" value={selectedApprovedWishIds.length} accent="var(--fg)" />
+                <MetricPill label="Total" value={totalLabel} accent="var(--special-accent)" />
+              </div>
+            </motion.div>
+          </div>
         </div>
       </section>
 
-      <section className="pt-6 pb-20 lg:pt-8 lg:pb-28">
-        <div className="max-w-7xl mx-auto px-6 lg:px-12 space-y-6 lg:space-y-7">
-          <div className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
+      <section className="py-8 lg:py-10">
+        <div className="max-w-7xl mx-auto px-6 lg:px-12">
+          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
+            <StepCard index={1} title="Draft Wishes" copy="Add the wishes you want included and keep editing until the wording is stable." />
+            <StepCard index={2} title="Submit Review" copy="Send the current draft to admin. Wishes move through approval or correction rounds." />
+            <StepCard index={3} title="Select Approved Wishes" copy="Only approved wishes can be included in checkout. Selection directly controls the amount." />
+            <StepCard index={4} title="Generate Synced QR" copy="The QR is recreated whenever the approved checkout selection changes so payment always matches the live total." />
+          </div>
+        </div>
+      </section>
+
+      <section className="pb-20 lg:pb-28">
+        <div className="max-w-7xl mx-auto px-6 lg:px-12 space-y-6">
+          <SectionCard>
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
-                <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Events</p>
-                <h3 className="text-xl mt-2" style={{ color: 'var(--fg)' }}>Next 5 ritual dates</h3>
-                <p className="mt-2 text-xs" style={{ color: 'var(--fg2)' }}>Includes Hindu lunar date for each event.</p>
+                <p className="text-[10px] tracking-[0.24em] uppercase" style={{ color: 'var(--special-accent)' }}>Ritual Dates</p>
+                <h2 className="mt-2 text-2xl" style={{ color: 'var(--fg)' }}>Choose the next sacred date</h2>
+                <p className="mt-2 text-sm" style={{ color: 'var(--fg2)' }}>Each event includes its Hindu lunar label so the request and checkout stay tied to the same date.</p>
               </div>
               <div className="inline-flex items-center gap-2 rounded-full px-3 py-1.5" style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}>
                 <Clock3 className="w-3.5 h-3.5" strokeWidth={1.8} />
-                <span className="text-[10px] tracking-[0.2em] uppercase">Asia/Kolkata</span>
+                <span className="text-[10px] tracking-[0.18em] uppercase">Asia/Kolkata</span>
               </div>
             </div>
 
             {eventsLoading ? (
               <div className="mt-5 inline-flex items-center gap-2" style={{ color: 'var(--fg2)' }}>
                 <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.8} />
-                Loading events...
+                Loading ritual dates...
               </div>
             ) : eventsError ? (
-              <p className="mt-5 text-sm" style={{ color: '#E08A6F' }}>{eventsError}</p>
+              <div className="mt-5 rounded-2xl p-4 flex items-start gap-3" style={{ border: '1px solid rgba(224,138,111,0.35)', background: 'rgba(224,138,111,0.08)' }}>
+                <AlertCircle className="w-4 h-4 mt-0.5" style={{ color: '#F2B199' }} strokeWidth={1.9} />
+                <p className="text-sm" style={{ color: '#F2B199' }}>{eventsError}</p>
+              </div>
             ) : (
-              <div className="mt-5 space-y-2.5">
+              <div className="mt-5 grid lg:grid-cols-5 gap-3">
                 {events.map((event) => {
                   const active = selectedEventId === event.id;
                   return (
                     <button
                       key={`${event.id}-${event.date}`}
                       type="button"
-                      onClick={() => setSelectedEventId(event.id)}
-                      className="w-full text-left rounded-xl px-4 py-3 transition-all"
+                      onClick={() => setSelectedEventId(String(event.id))}
+                      className="text-left rounded-2xl p-4"
                       style={{
-                        border: `1px solid ${active ? 'var(--special-border)' : 'var(--border2)'}`,
+                        border: active ? '1px solid var(--special-border)' : '1px solid var(--border2)',
                         background: active ? 'var(--special-bg)' : 'var(--bg)',
                       }}
                     >
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <p className="text-sm" style={{ color: active ? 'var(--special-accent)' : 'var(--fg)' }}>{event.label}</p>
-                        <p className="text-[11px] uppercase tracking-[0.16em]" style={{ color: 'var(--fg3)' }}>{event.date}</p>
-                      </div>
-                      <p className="text-xs mt-1" style={{ color: 'var(--fg2)' }}>{event?.hindu_lunar?.label || 'Lunar date unavailable'}</p>
+                      <p className="text-[10px] tracking-[0.18em] uppercase" style={{ color: active ? 'var(--special-accent)' : 'var(--fg3)' }}>{event.date}</p>
+                      <p className="mt-3 text-base leading-snug" style={{ color: 'var(--fg)' }}>{event.label}</p>
+                      <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--fg2)' }}>{event?.hindu_lunar?.label || 'Lunar label unavailable'}</p>
                     </button>
                   );
                 })}
               </div>
             )}
-          </div>
+          </SectionCard>
 
           {!firebaseConfigured ? (
-            <div className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid rgba(224,106,106,0.4)', background: 'rgba(224,106,106,0.08)' }}>
-              <p className="text-sm" style={{ color: 'var(--fg)' }}>Auth is not configured yet for Combined Healings.</p>
-              <p className="text-xs mt-2" style={{ color: 'var(--fg2)' }}>Set Firebase frontend env vars first.</p>
-            </div>
+            <SectionCard>
+              <p className="text-sm" style={{ color: 'var(--fg)' }}>Firebase auth is not configured for this page yet.</p>
+              <p className="mt-2 text-xs" style={{ color: 'var(--fg2)' }}>Set the frontend Firebase env vars before using Combined Healings.</p>
+            </SectionCard>
           ) : !authUser ? (
-            <div className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
-              <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Locked Interface</p>
-              <h3 className="text-2xl mt-2" style={{ color: 'var(--fg)' }}>Sign up or login to unlock wish planner</h3>
-              <div className="mt-4 flex gap-2 flex-wrap">
+            <SectionCard>
+              <p className="text-[10px] tracking-[0.24em] uppercase" style={{ color: 'var(--special-accent)' }}>Access Required</p>
+              <h2 className="mt-2 text-2xl" style={{ color: 'var(--fg)' }}>Sign up or log in to build your request</h2>
+              <p className="mt-3 text-sm max-w-2xl" style={{ color: 'var(--fg2)' }}>
+                Combined Healings keeps one live request per signed-in client. Your review rounds, approved wishes, and checkout session all attach to that account.
+              </p>
+              <div className="mt-5 flex gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => nudgeAuth('signup')}
                   className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] tracking-[0.2em] uppercase"
-                  style={{ background: 'var(--accent)', color: '#fff' }}
+                  style={{ background: 'var(--special-accent)', color: '#fff' }}
                 >
                   Sign up
+                  <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={1.8} />
                 </button>
                 <button
                   type="button"
                   onClick={() => nudgeAuth('login')}
                   className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] tracking-[0.2em] uppercase"
-                  style={{ border: '1px solid var(--border2)', color: 'var(--fg2)', background: 'var(--bg)' }}
+                  style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
                 >
-                  Login
+                  Log in
                 </button>
               </div>
-            </div>
+            </SectionCard>
           ) : emailVerificationPending ? (
-            <div className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--special-border)', background: 'var(--special-bg)' }}>
-              <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Email verification required</p>
-              <h3 className="text-xl mt-2" style={{ color: 'var(--fg)' }}>Verify {authUser?.email || 'your email'} first</h3>
+            <SectionCard>
+              <p className="text-[10px] tracking-[0.24em] uppercase" style={{ color: 'var(--special-accent)' }}>Email Verification Needed</p>
+              <h2 className="mt-2 text-2xl" style={{ color: 'var(--fg)' }}>Verify {authUser?.email || 'your email'} before continuing</h2>
+              <p className="mt-3 text-sm" style={{ color: 'var(--fg2)' }}>
+                The request, review cycle, and checkout session stay locked until the email/password account is verified.
+              </p>
               <button
                 type="button"
                 onClick={() => nudgeAuth('login')}
-                className="mt-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] tracking-[0.2em] uppercase"
-                style={{ border: '1px solid var(--special-border)', color: 'var(--special-accent)', background: 'var(--bg)' }}
+                className="mt-5 inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] tracking-[0.2em] uppercase"
+                style={{ border: '1px solid var(--special-border)', color: 'var(--special-accent)' }}
               >
                 Go to login
               </button>
-            </div>
+            </SectionCard>
           ) : (
             <>
-              <div className="rounded-2xl p-5 lg:p-6" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div>
-                    <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--special-accent)' }}>Wish Planner</p>
-                    <h3 className="text-xl mt-2" style={{ color: 'var(--fg)' }}>{authUser.displayName || authUser.email}</h3>
-                    <p className="text-xs mt-1" style={{ color: 'var(--fg2)' }}>Min 1 wish. Each wish max {MAX_WISH_LEN} chars.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onSignOut}
-                    className="inline-flex items-center gap-1.5 text-[10px] tracking-[0.2em] uppercase px-2.5 py-1.5 rounded"
-                    style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
-                  >
-                    <LogOut className="w-3 h-3" strokeWidth={1.8} />
-                    Sign out
-                  </button>
-                </div>
-
-                <div className="mt-5 grid lg:grid-cols-[1.1fr_0.9fr] gap-5">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap mb-3">
-                      {['all', 'needs_correction', 'corrected', 'approved'].map((key) => {
-                        const active = wishFilter === key;
-                        const label = key === 'all' ? 'All' : key.replace('_', ' ');
-                        return (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => setWishFilter(key)}
-                            className="px-3 py-1.5 rounded-full text-[10px] tracking-[0.2em] uppercase"
-                            style={{
-                              border: '1px solid var(--border2)',
-                              color: active ? 'var(--special-accent)' : 'var(--fg2)',
-                              background: active ? 'var(--special-bg)' : 'transparent',
-                            }}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
+              <div className="grid xl:grid-cols-[1.1fr_0.9fr] gap-6 items-start">
+                <SectionCard>
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div>
+                      <p className="text-[10px] tracking-[0.24em] uppercase" style={{ color: 'var(--special-accent)' }}>Wish Ledger</p>
+                      <h2 className="mt-2 text-2xl" style={{ color: 'var(--fg)' }}>{authUser.displayName || authUser.email}</h2>
+                      <p className="mt-2 text-sm" style={{ color: 'var(--fg2)' }}>
+                        Edit text here, then save. Checkout is only enabled when the server-synced draft matches what you see on screen.
+                      </p>
                     </div>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={selectAllWishes}
-                          className="px-3 py-1.5 rounded-full text-[10px] tracking-[0.16em] uppercase"
-                          style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
-                        >
-                          Select all
-                        </button>
-                        <button
-                          type="button"
-                          onClick={clearWishSelection}
-                          className="px-3 py-1.5 rounded-full text-[10px] tracking-[0.16em] uppercase"
-                          style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
-                        >
-                          Clear
-                        </button>
-                        <span className="text-[10px] tracking-[0.14em] uppercase" style={{ color: 'var(--fg3)' }}>
-                          {selectedCount} selected
-                        </span>
-                      </div>
-
-                      {displayedWishes.map((wish, index) => {
-                        const token = statusToken(wish.status);
-                        const absoluteIndex = wishes.findIndex((item) => item.id === wish.id);
-                        const displayIndex = absoluteIndex >= 0 ? absoluteIndex + 1 : index + 1;
-                        const isSelected = selectedWishIds.includes(wish.id);
-                        return (
-                          <div key={wish.id} className="rounded-xl p-3" style={{ border: `1px solid ${isSelected ? 'var(--special-border)' : 'var(--border2)'}`, background: isSelected ? 'var(--special-bg)' : 'var(--bg)' }}>
-                            <div className="flex items-center justify-between gap-3">
-                              <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => toggleWish(wish.id)}
-                                  className="mt-0.5"
-                                />
-                                <p className="text-[11px] tracking-[0.17em] uppercase" style={{ color: 'var(--fg3)' }}>Wish {displayIndex}</p>
-                              </label>
-                              <span className="text-[10px] tracking-[0.14em] uppercase px-2 py-1 rounded-full" style={token.style}>{token.label}</span>
-                            </div>
-                            <textarea
-                              value={wish.text}
-                              onChange={(e) => setWishText(wish.id, e.target.value)}
-                              rows={3}
-                              className="w-full mt-2 bg-transparent border-0 outline-none resize-y text-sm leading-relaxed"
-                              style={{ color: 'var(--fg)', borderBottom: '1px solid var(--border2)', paddingBottom: '10px' }}
-                              placeholder="Type your wish..."
-                            />
-                            <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
-                              <p className="text-[11px]" style={{ color: 'var(--fg3)' }}>{wish.text.length}/{MAX_WISH_LEN}</p>
-                              {wish.admin_note ? (
-                                <p className="text-xs" style={{ color: '#E8A58D' }}>Admin note: {wish.admin_note}</p>
-                              ) : <span />}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
                     <button
                       type="button"
-                      onClick={addWish}
-                      className="mt-3 inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-[10px] tracking-[0.18em] uppercase"
+                      onClick={onSignOut}
+                      className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-[10px] tracking-[0.18em] uppercase"
                       style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
                     >
-                      <Plus className="w-3.5 h-3.5" strokeWidth={1.9} />
-                      Add wish
+                      <LogOut className="w-3.5 h-3.5" strokeWidth={1.8} />
+                      Sign out
                     </button>
                   </div>
 
-                  <div ref={paymentCardRef} className="rounded-xl p-4" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
-                    <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Pricing and checkout</p>
+                  <div className="mt-5 flex gap-2 flex-wrap">
+                    <MetricPill label="Request" value={requestStatusMeta.label} accent="var(--fg)" />
+                    <MetricPill label="Checkout" value={checkoutStatusMeta.label} accent="var(--fg)" />
+                    <MetricPill label="Approved" value={requestRow?.approved_count || 0} />
+                    <MetricPill label="Review Rounds" value={requestRow?.review_count || 0} />
+                  </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-2">
+                  {requestRow?.client_review_pending && (
+                    <div className="mt-5 rounded-2xl p-4" style={{ border: '1px solid rgba(245,208,125,0.34)', background: 'rgba(171,130,51,0.12)' }}>
+                      <p className="text-[10px] tracking-[0.18em] uppercase" style={{ color: '#F5D07D' }}>Review Pending</p>
+                      <p className="mt-2 text-sm" style={{ color: 'var(--fg)' }}>
+                        Admin review is pending. You can still save edits, but submitting another review will stay blocked until the current round clears.
+                      </p>
+                    </div>
+                  )}
+
+                  {requestRow?.admin_last_note && !requestRow?.client_review_pending && (
+                    <div className="mt-5 rounded-2xl p-4" style={{ border: '1px solid rgba(224,138,111,0.34)', background: 'rgba(224,138,111,0.08)' }}>
+                      <p className="text-[10px] tracking-[0.18em] uppercase" style={{ color: '#F2B199' }}>Latest Admin Note</p>
+                      <p className="mt-2 text-sm" style={{ color: 'var(--fg)' }}>{requestRow.admin_last_note}</p>
+                    </div>
+                  )}
+
+                  <div className="mt-6 space-y-4">
+                    {wishes.map((wish, index) => {
+                      const meta = toneForWishStatus(wish.status);
+                      const isApproved = String(wish.status || '').toLowerCase() === 'approved';
+                      const selectedForCheckout = selectedApprovedWishIds.includes(wish.id);
+                      const chars = String(wish.text || '').length;
+                      return (
+                        <div
+                          key={wish.id}
+                          className="rounded-[24px] p-4"
+                          style={{
+                            border: selectedForCheckout ? '1px solid var(--special-border)' : '1px solid var(--border2)',
+                            background: selectedForCheckout ? 'var(--special-bg)' : 'var(--bg)',
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-3">
+                              <label className="inline-flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedForCheckout}
+                                  disabled={!isApproved || checkoutCompleted}
+                                  onChange={() => onToggleCheckoutWish(wish.id)}
+                                />
+                                <span className="text-[11px] tracking-[0.16em] uppercase" style={{ color: 'var(--fg3)' }}>
+                                  Wish {index + 1}
+                                </span>
+                              </label>
+                              <StatusBadge meta={meta} />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => onRemoveWish(wish.id)}
+                              disabled={checkoutCompleted || wishes.length <= 1}
+                              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] tracking-[0.16em] uppercase disabled:opacity-45"
+                              style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                              Remove
+                            </button>
+                          </div>
+
+                          <textarea
+                            rows={4}
+                            value={wish.text}
+                            disabled={checkoutCompleted}
+                            onChange={(event) => onWishTextChange(wish.id, event.target.value)}
+                            className="mt-4 w-full bg-transparent border-0 outline-none resize-y text-sm leading-relaxed"
+                            style={{
+                              color: 'var(--fg)',
+                              borderBottom: '1px solid var(--border2)',
+                              paddingBottom: '10px',
+                            }}
+                            placeholder="Describe the wish clearly and specifically."
+                          />
+
+                          <div className="mt-3 flex items-start justify-between gap-3 flex-wrap">
+                            <div className="text-xs" style={{ color: isApproved ? 'var(--fg2)' : 'var(--fg3)' }}>
+                              {isApproved ? 'Approved wishes can be toggled into checkout.' : 'Only approved wishes can be included in checkout.'}
+                            </div>
+                            <div className="text-[11px]" style={{ color: chars > MAX_WISH_LEN ? '#F2B199' : 'var(--fg3)' }}>
+                              {chars}/{MAX_WISH_LEN}
+                            </div>
+                          </div>
+
+                          {wish.admin_note ? (
+                            <div className="mt-3 rounded-xl px-3 py-2" style={{ border: '1px solid rgba(224,138,111,0.32)', background: 'rgba(224,138,111,0.08)' }}>
+                              <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: '#F2B199' }}>Correction Note</p>
+                              <p className="mt-1 text-sm" style={{ color: 'var(--fg)' }}>{wish.admin_note}</p>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-5 flex items-center justify-between gap-3 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={onAddWish}
+                      disabled={checkoutCompleted || wishes.length >= MAX_WISHES}
+                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[10px] tracking-[0.18em] uppercase disabled:opacity-45"
+                      style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
+                    >
+                      <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
+                      Add wish
+                    </button>
+                    <p className="text-xs" style={{ color: 'var(--fg3)' }}>
+                      {selectedApprovedWishIds.length} approved wish{selectedApprovedWishIds.length === 1 ? '' : 'es'} selected for checkout
+                    </p>
+                  </div>
+                </SectionCard>
+
+                <SectionCard className="xl:sticky xl:top-8">
+                  <div ref={paymentCardRef}>
+                    <p className="text-[10px] tracking-[0.24em] uppercase" style={{ color: 'var(--special-accent)' }}>Checkout Console</p>
+                    <h2 className="mt-2 text-2xl" style={{ color: 'var(--fg)' }}>Sync first. Then pay.</h2>
+                    <p className="mt-2 text-sm" style={{ color: 'var(--fg2)' }}>
+                      This panel never trusts stale UI state. If the approved selection changes, the QR is cleared and rebuilt before the panel returns to ready.
+                    </p>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3">
                       <button
                         type="button"
                         onClick={() => setCountryProfile('india')}
-                        className="rounded-lg px-3 py-2 text-left"
-                        style={{ border: countryProfile === 'india' ? '1px solid var(--accent)' : '1px solid var(--border2)', background: countryProfile === 'india' ? 'var(--accent-dim)' : 'transparent' }}
+                        className="rounded-2xl p-3 text-left"
+                        style={{
+                          border: countryProfile === 'india' ? '1px solid var(--accent)' : '1px solid var(--border2)',
+                          background: countryProfile === 'india' ? 'var(--accent-dim)' : 'var(--bg)',
+                        }}
                       >
                         <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: 'var(--fg3)' }}>India</p>
-                        <p className="text-sm mt-1" style={{ color: 'var(--fg)' }}>{PRICING.combinedHealings.india.label} / wish</p>
+                        <p className="mt-2 text-sm" style={{ color: 'var(--fg)' }}>{PRICING.combinedHealings.india.label} / wish</p>
                       </button>
                       <button
                         type="button"
                         onClick={() => setCountryProfile('outside_india')}
-                        className="rounded-lg px-3 py-2 text-left"
-                        style={{ border: countryProfile === 'outside_india' ? '1px solid var(--special-border)' : '1px solid var(--border2)', background: countryProfile === 'outside_india' ? 'var(--special-bg)' : 'transparent' }}
+                        className="rounded-2xl p-3 text-left"
+                        style={{
+                          border: countryProfile === 'outside_india' ? '1px solid var(--special-border)' : '1px solid var(--border2)',
+                          background: countryProfile === 'outside_india' ? 'var(--special-bg)' : 'var(--bg)',
+                        }}
                       >
                         <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: 'var(--fg3)' }}>Outside India</p>
-                        <p className="text-sm mt-1" style={{ color: 'var(--fg)' }}>{PRICING.combinedHealings.international.label} / wish</p>
+                        <p className="mt-2 text-sm" style={{ color: 'var(--fg)' }}>{PRICING.combinedHealings.international.label} / wish</p>
                       </button>
                     </div>
 
                     {!geoLoading && (
-                      <p className="mt-2 text-[11px]" style={{ color: 'var(--fg3)' }}>
-                        Auto-country: {countryCode || 'IN'} (manual override enabled)
+                      <p className="mt-3 text-[11px]" style={{ color: 'var(--fg3)' }}>
+                        Auto-country: {countryCode || 'IN'} (manual override allowed)
                       </p>
                     )}
 
-                    <div className="mt-4 rounded-lg p-3" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
-                      <p className="text-[10px] tracking-[0.18em] uppercase" style={{ color: 'var(--fg3)' }}>Amount summary</p>
-                      <p className="text-sm mt-2" style={{ color: 'var(--fg2)' }}>{selectedCount} selected wish{selectedCount !== 1 ? 'es' : ''} x {wishUnitLabel}</p>
-                      <p className="text-xl mt-1" style={{ color: 'var(--fg)' }}>{checkoutTotalLabel}</p>
-                    </div>
+                    <div className="mt-5 rounded-[24px] p-4" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: 'var(--fg3)' }}>Selected Ritual</p>
+                          <p className="mt-2 text-lg" style={{ color: 'var(--fg)' }}>{selectedEvent?.label || 'Choose an event above'}</p>
+                          <p className="mt-1 text-sm" style={{ color: 'var(--fg2)' }}>{selectedEvent?.date || 'No date selected yet'}</p>
+                          <p className="mt-1 text-xs" style={{ color: 'var(--fg3)' }}>{selectedEvent?.hindu_lunar?.label || 'Lunar label will appear here'}</p>
+                        </div>
+                        <StatusBadge meta={checkoutStatusMeta} />
+                      </div>
 
-                    <div className="mt-4 space-y-2.5">
-                      <button
-                        type="button"
-                        onClick={saveNow}
-                        disabled={saving}
-                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-[11px] tracking-[0.2em] uppercase disabled:opacity-60"
-                        style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
-                      >
-                        {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2} /> : <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.8} />}
-                        Save draft
-                      </button>
+                      <div className="mt-5 grid grid-cols-2 gap-3">
+                        <MetricPill label="Approved Selected" value={selectedApprovedWishIds.length} accent="var(--fg)" />
+                        <MetricPill label="Unit Price" value={unitLabel} accent="var(--fg)" />
+                      </div>
 
-                      <button
-                        type="button"
-                        onClick={submitReview}
-                        disabled={!canSubmitReview || reviewing}
-                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-[11px] tracking-[0.2em] uppercase disabled:opacity-55"
-                        style={{ background: 'var(--accent)', color: '#fff' }}
-                      >
-                        {reviewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2} /> : <Clock3 className="w-3.5 h-3.5" strokeWidth={1.8} />}
-                        {allApproved ? 'All approved' : 'Send for review'}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={startCheckout}
-                        disabled={!canCheckout || checkoutStarting}
-                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-[11px] tracking-[0.2em] uppercase disabled:opacity-55"
-                        style={{
-                          border: `1px solid ${selectedWishesApproved ? 'var(--status-done-border)' : 'var(--border2)'}`,
-                          color: selectedWishesApproved ? 'var(--status-success-fg)' : 'var(--fg3)',
-                        }}
-                      >
-                        {checkoutStarting ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2} /> : <WalletCards className="w-3.5 h-3.5" strokeWidth={1.8} />}
-                        Checkout now
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={cancelRequest}
-                        disabled={cancelling}
-                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-[10px] tracking-[0.2em] uppercase disabled:opacity-55"
-                        style={{ border: '1px solid rgba(224,138,111,0.45)', color: '#E8A58D' }}
-                      >
-                        {cancelling ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2} /> : <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />}
-                        Cancel and delete
-                      </button>
+                      <div className="mt-4 rounded-2xl p-4" style={{ border: '1px solid var(--special-border)', background: 'var(--special-bg)' }}>
+                        <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: 'var(--special-accent)' }}>Total for QR</p>
+                        <p className="mt-2 text-3xl" style={{ color: 'var(--fg)' }}>{totalLabel}</p>
+                        <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--fg2)' }}>
+                          The QR is considered valid only when it reflects this exact total and this exact approved selection.
+                        </p>
+                      </div>
                     </div>
 
                     {countryProfile === 'outside_india' && (
-                      <div className="mt-4 rounded-lg p-3" style={{ border: '1px solid var(--special-border)', background: 'var(--special-bg)' }}>
-                        <p className="text-xs" style={{ color: 'var(--special-accent)' }}>{OUTSIDE_NOTICE}</p>
-                        {!!checkoutRails.length && (
-                          <div className="mt-2 space-y-1.5">
-                            {checkoutRails.map((rail) => (
-                              <div key={rail.id || rail.name} className="text-[11px]" style={{ color: 'var(--fg2)' }}>
-                                {rail.name}: {rail.detail}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                      <div className="mt-5 rounded-[24px] p-4" style={{ border: '1px solid var(--special-border)', background: 'var(--special-bg)' }}>
+                        <p className="text-[10px] tracking-[0.18em] uppercase" style={{ color: 'var(--special-accent)' }}>International Rail Notice</p>
+                        <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--fg)' }}>{OUTSIDE_NOTICE}</p>
+                        <div className="mt-4 space-y-2">
+                          {checkoutRails.map((rail) => (
+                            <div key={rail.id || rail.name} className="rounded-xl px-3 py-2" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
+                              <p className="text-sm" style={{ color: 'var(--fg)' }}>{rail.name}</p>
+                              <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--fg2)' }}>{rail.detail}</p>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 
-                    {!!checkoutSessionId && (
-                      <div className="mt-4 rounded-lg p-3" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
-                        <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>
-                          Checkout session: {checkoutSessionStatus || 'awaiting payment'}
-                        </p>
-                        {checkoutQrSrc && (
-                          <div className="mt-3 flex justify-center">
-                            <div className="rounded-lg overflow-hidden p-2" style={{ border: '1px solid var(--border2)', background: '#fff', maxWidth: 'min(84vw, 280px)' }}>
-                              <img src={checkoutQrSrc} alt="Combined Healings QR" className="block w-full h-auto aspect-square object-contain" />
-                            </div>
+                    <div className="mt-5 grid sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={saveNow}
+                        disabled={!canSave}
+                        className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-[11px] tracking-[0.2em] uppercase disabled:opacity-45"
+                        style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
+                      >
+                        {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} /> : <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.8} />}
+                        Save Draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={submitReview}
+                        disabled={!canSubmitReview}
+                        className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-[11px] tracking-[0.2em] uppercase disabled:opacity-45"
+                        style={{ background: 'var(--accent)', color: '#fff' }}
+                      >
+                        {reviewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} /> : <Sparkles className="w-3.5 h-3.5" strokeWidth={1.8} />}
+                        Submit Review
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => syncCheckoutSession({ reason: 'manual' })}
+                        disabled={!canGenerateCheckout}
+                        className="sm:col-span-2 inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-[11px] tracking-[0.22em] uppercase disabled:opacity-45"
+                        style={{
+                          border: canGenerateCheckout ? '1px solid var(--special-border)' : '1px solid var(--border2)',
+                          color: canGenerateCheckout ? 'var(--special-accent)' : 'var(--fg3)',
+                        }}
+                      >
+                        {checkoutSyncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} /> : <WalletCards className="w-3.5 h-3.5" strokeWidth={1.8} />}
+                        {checkoutSessionMatches && checkoutSessionReady && !checkoutCompleted ? 'Regenerate QR' : 'Generate Checkout QR'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => refreshCheckoutSession(checkoutSession?.id)}
+                        disabled={!checkoutSession?.id || checkoutRefreshing}
+                        className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-[11px] tracking-[0.2em] uppercase disabled:opacity-45"
+                        style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
+                      >
+                        {checkoutRefreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} /> : <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.8} />}
+                        Refresh Payment
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelRequest}
+                        disabled={checkoutCompleted || cancelling}
+                        className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-[11px] tracking-[0.2em] uppercase disabled:opacity-45"
+                        style={{ border: '1px solid rgba(224,138,111,0.35)', color: '#F2B199' }}
+                      >
+                        {cancelling ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} /> : <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />}
+                        Cancel Request
+                      </button>
+                    </div>
+
+                    {checkoutBlockedReason && (
+                      <div className="mt-4 rounded-2xl p-4 flex items-start gap-3" style={{ border: '1px solid rgba(245,208,125,0.34)', background: 'rgba(171,130,51,0.12)' }}>
+                        <Clock3 className="w-4 h-4 mt-0.5" style={{ color: '#F5D07D' }} strokeWidth={1.9} />
+                        <p className="text-sm leading-relaxed" style={{ color: 'var(--fg)' }}>{checkoutBlockedReason}</p>
+                      </div>
+                    )}
+
+                    <div className="mt-5 rounded-[28px] p-5" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: 'var(--fg3)' }}>QR Status</p>
+                          <p className="mt-2 text-lg" style={{ color: 'var(--fg)' }}>
+                            {checkoutCompleted
+                              ? 'Payment confirmed'
+                              : checkoutSyncing
+                                ? 'Syncing checkout session'
+                                : checkoutSessionReady
+                                  ? 'QR ready'
+                                  : 'No active QR'}
+                          </p>
+                        </div>
+                        <StatusBadge meta={checkoutStatusMeta} />
+                      </div>
+
+                      <div className="mt-5 rounded-[24px] p-3 flex items-center justify-center min-h-[320px]" style={{ border: '1px solid var(--border2)', background: checkoutSessionReady ? '#fff' : 'rgba(255,255,255,0.02)' }}>
+                        {checkoutSyncing ? (
+                          <div className="text-center" style={{ color: 'var(--fg2)' }}>
+                            <Loader2 className="w-6 h-6 animate-spin mx-auto" strokeWidth={1.8} />
+                            <p className="mt-3 text-sm">Clearing stale QR and creating a fresh one...</p>
+                          </div>
+                        ) : checkoutSessionReady ? (
+                          <img
+                            src={checkoutQrDisplaySrc || checkoutSession.qr_src}
+                            alt="Combined Healings checkout QR"
+                            className="block w-full h-auto max-w-[280px] aspect-square object-contain"
+                          />
+                        ) : (
+                          <div className="text-center max-w-xs" style={{ color: 'var(--fg2)' }}>
+                            <WalletCards className="w-7 h-7 mx-auto" strokeWidth={1.7} />
+                            <p className="mt-3 text-sm">
+                              Generate checkout after the request is saved and at least one approved wish is selected.
+                            </p>
                           </div>
                         )}
-                        <div className="mt-3 flex gap-2 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => refreshCheckoutSession(checkoutSessionId)}
-                            disabled={checkoutRefreshing}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[10px] tracking-[0.18em] uppercase disabled:opacity-55"
+                      </div>
+
+                      <div className="mt-4 flex items-center gap-2 flex-wrap">
+                        <MetricPill label="Session Wishes" value={checkoutSession?.wish_count || 0} accent="var(--fg)" />
+                        <MetricPill label="Session Amount" value={checkoutSession?.amount ? formatMoney(checkoutSession.amount, checkoutSession.country_profile) : 'Not ready'} accent="var(--fg)" />
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {checkoutSession?.upi_intent && !checkoutCompleted && (
+                          <a
+                            href={checkoutSession.upi_intent}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] tracking-[0.2em] uppercase"
                             style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
                           >
-                            {checkoutRefreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.9} /> : <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.8} />}
-                            Check status
-                          </button>
-                          {checkoutUpiIntent && (
-                            <a
-                              href={checkoutUpiIntent}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[10px] tracking-[0.18em] uppercase"
-                              style={{ border: '1px solid var(--border2)', color: 'var(--fg2)' }}
-                            >
-                              <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={1.8} />
-                              Open UPI app
-                            </a>
-                          )}
-                        </div>
+                            <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={1.8} />
+                            Open UPI App
+                          </a>
+                        )}
+
                         {checkoutNotice && (
-                          <p className="mt-2 text-xs" style={{ color: checkoutSessionStatus === 'paid' ? 'var(--status-success-fg)' : 'var(--fg2)' }}>
-                            {checkoutNotice}
-                          </p>
+                          <div className="rounded-2xl p-4 flex items-start gap-3" style={{ border: '1px solid var(--border2)', background: 'rgba(255,255,255,0.02)' }}>
+                            {checkoutCompleted ? (
+                              <CheckCircle2 className="w-4 h-4 mt-0.5" style={{ color: '#7DE5B1' }} strokeWidth={1.9} />
+                            ) : (
+                              <Clock3 className="w-4 h-4 mt-0.5" style={{ color: 'var(--accent-text)' }} strokeWidth={1.9} />
+                            )}
+                            <p className="text-sm leading-relaxed" style={{ color: 'var(--fg)' }}>{checkoutNotice}</p>
+                          </div>
                         )}
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
-
-                {loadingRequest && (
-                  <p className="mt-4 inline-flex items-center gap-2 text-xs" style={{ color: 'var(--fg2)' }}>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.8} />
-                    Syncing latest request...
-                  </p>
-                )}
-
-                {(error || notice) && (
-                  <div className="mt-4">
-                    {error && <p className="text-sm" style={{ color: '#E08A6F' }}>{error}</p>}
-                    {notice && (
-                      <p className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--accent-text)' }}>
-                        <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={1.8} />
-                        {notice}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                <div className="mt-4 rounded-lg p-3" style={{ border: '1px solid var(--border2)', background: 'var(--bg)' }}>
-                  <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: 'var(--fg3)' }}>Review progress</p>
-                  <p className="text-sm mt-1" style={{ color: 'var(--fg2)' }}>
-                    Total review rounds: {requestRow?.review_count || 0}
-                  </p>
-                  <p className="text-sm" style={{ color: 'var(--fg2)' }}>
-                    Request status: {requestRow?.status || 'draft'}
-                  </p>
-                </div>
+                </SectionCard>
               </div>
+
+              {loadingRequest && (
+                <div className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--fg2)' }}>
+                  <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.8} />
+                  Syncing latest request state...
+                </div>
+              )}
+
+              {(error || notice) && (
+                <div className="space-y-3">
+                  {error && (
+                    <div className="rounded-2xl p-4 flex items-start gap-3" style={{ border: '1px solid rgba(224,138,111,0.34)', background: 'rgba(224,138,111,0.08)' }}>
+                      <AlertCircle className="w-4 h-4 mt-0.5" style={{ color: '#F2B199' }} strokeWidth={1.9} />
+                      <p className="text-sm leading-relaxed" style={{ color: '#F2B199' }}>{error}</p>
+                    </div>
+                  )}
+                  {notice && (
+                    <div className="rounded-2xl p-4 flex items-start gap-3" style={{ border: '1px solid rgba(99,230,168,0.26)', background: 'rgba(67,154,106,0.1)' }}>
+                      <CheckCircle2 className="w-4 h-4 mt-0.5" style={{ color: '#7DE5B1' }} strokeWidth={1.9} />
+                      <p className="text-sm leading-relaxed" style={{ color: '#7DE5B1' }}>{notice}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
-        </div>
-      </section>
-
-      <section className="pb-16">
-        <div className="max-w-7xl mx-auto px-6 lg:px-12">
-          <div className="rounded-xl px-5 py-4" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
-            <p className="text-[10px] tracking-[0.22em] uppercase" style={{ color: 'var(--fg3)' }}>Combined Healings Notes</p>
-            <p className="text-sm mt-2 font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
-              Only the latest request state is retained for both client and admin interfaces. Once all wishes are approved, you can checkout or cancel and start fresh.
-            </p>
-            <div className="mt-3">
-              <Link to={createPageUrl('Instant Consult')} className="inline-flex items-center gap-1.5 text-xs tracking-[0.18em] uppercase" style={{ color: 'var(--accent-text)' }}>
-                Need one-off guidance instead?
-                <ArrowUpRight className="w-3.5 h-3.5" strokeWidth={1.8} />
-              </Link>
-            </div>
-          </div>
         </div>
       </section>
 

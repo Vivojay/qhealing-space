@@ -950,7 +950,16 @@ def _serialize_combined_request(
         "status": data.get("status") or "draft",
         "checkout_status": data.get("checkout_status") or "not_started",
         "checkout_session_id": data.get("checkout_session_id") or None,
+        "checkout_request_id": data.get("checkout_request_id") or None,
+        "checkout_wish_count": int(data.get("checkout_wish_count") or 0),
+        "checkout_selected_wish_ids": [
+            str(item).strip()
+            for item in (data.get("checkout_selected_wish_ids") or [])
+            if str(item).strip()
+        ],
         "checkout_paid_at": _iso_value(data.get("checkout_paid_at")),
+        "client_review_pending": bool(data.get("client_review_pending")),
+        "admin_last_note": (data.get("admin_last_note") or "").strip(),
         "wish_count": len(wish_rows),
         "approved_count": approved_count,
         "needs_correction_count": needs_correction_count,
@@ -985,6 +994,12 @@ def _serialize_combined_payment_session(doc: Any) -> dict[str, Any]:
         "amount": amount_int,
         "currency": data.get("currency") or "INR",
         "wish_count": wish_count,
+        "selected_wish_ids": [
+            str(item).strip()
+            for item in (data.get("selected_wish_ids") or [])
+            if str(item).strip()
+        ],
+        "request_id": data.get("request_id") or None,
         "country_profile": _normalize_country_profile(
             data.get("country_profile"), fallback="india"
         ),
@@ -2353,6 +2368,7 @@ class CombinedHealingCheckoutSessionRequest(BaseModel):
     selected_wish_ids: list[str] = Field(
         default_factory=list, max_length=COMBINED_HEALING_MAX_WISHES
     )
+    request_id: str | None = Field(default=None, max_length=64)
 
 
 class CombinedHealingPaymentWebhookRequest(BaseModel):
@@ -2371,6 +2387,7 @@ class CombinedHealingAdminReviewRequest(BaseModel):
     selected_wish_ids: list[str] = Field(
         default_factory=list, max_length=COMBINED_HEALING_MAX_WISHES
     )
+    request_id: str | None = Field(default=None, max_length=64)
     select_all: bool = False
     invert_selection: bool = False
     note: str | None = Field(default=None, max_length=500)
@@ -2378,6 +2395,7 @@ class CombinedHealingAdminReviewRequest(BaseModel):
 
 class CombinedHealingAdminSubmitReviewRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
+    request_id: str | None = Field(default=None, max_length=64)
 
 
 def _serialize_consult_message(doc: Any) -> dict[str, Any]:
@@ -3126,6 +3144,18 @@ async def combined_healings_submit_review(
     req_ref, req_snap, wishes, row = _combined_load_request_state(uid)
     if not req_snap or not row:
         raise HTTPException(404, "No combined-healings request found")
+
+    incoming_request_id = (body.request_id or "").strip()
+    stored_request_id = (row.get("checkout_request_id") or "").strip()
+    if (
+        stored_request_id
+        and incoming_request_id
+        and stored_request_id != incoming_request_id
+    ):
+        raise HTTPException(
+            409, "Stale request detected. Please refresh and try again."
+        )
+        raise HTTPException(404, "No combined-healings request found")
     if str(row.get("checkout_status") or "").strip().lower() == "paid":
         raise HTTPException(409, "Checkout is already completed")
     if not wishes:
@@ -3237,10 +3267,49 @@ async def combined_healings_create_checkout_session(
     req_ref, req_snap, wishes, row = _combined_load_request_state(uid)
     if not req_snap or not row:
         raise HTTPException(404, "No combined-healings request found")
-    if not wishes:
-        raise HTTPException(400, "Add at least one wish before checkout")
-    if not row.get("ritual_event_id") or not row.get("ritual_event_date"):
-        raise HTTPException(400, "Select ritual date before checkout")
+
+    incoming_request_id = (body.request_id or "").strip()
+    stored_request_id = (row.get("checkout_request_id") or "").strip()
+    if (
+        stored_request_id
+        and incoming_request_id
+        and stored_request_id != incoming_request_id
+    ):
+        raise HTTPException(
+            409, "Stale request detected. Please refresh and try again."
+        )
+
+    request_profile = _normalize_country_profile(
+        row.get("country_profile"), fallback="india"
+    )
+    checkout_profile = _normalize_country_profile(
+        body.country_profile, fallback=request_profile
+    )
+    checkout_country_code = (
+        (body.country_code or row.get("country_code") or "").strip().upper()
+    )
+    if checkout_country_code:
+        checkout_profile = _profile_from_country_code(checkout_country_code)
+
+    if (
+        checkout_profile == "outside_india"
+        and not _combined_international_payments_enabled()
+    ):
+        raise HTTPException(
+            409, _combined_international_payment_message("Combined Healings")
+        )
+
+    if str(row.get("checkout_status") or "").strip().lower() == "paid":
+        raise HTTPException(409, "Checkout already completed")
+
+    existing_session_id = row.get("checkout_session_id")
+    if existing_session_id:
+        existing_session_ref = (
+            get_firestore()
+            .collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION)
+            .document(existing_session_id)
+        )
+        existing_session_ref.delete()
 
     selected_ids = [
         str(item).strip()
@@ -3268,6 +3337,67 @@ async def combined_healings_create_checkout_session(
 
     wish_count = checkout_wish_count
     amount = _combined_total_amount(checkout_profile, wish_count)
+    if not row.get("ritual_event_id") or not row.get("ritual_event_date"):
+        raise HTTPException(400, "Select ritual date before checkout")
+
+    selected_ids = [
+        str(item).strip()
+        for item in (body.selected_wish_ids or [])
+        if str(item).strip()
+    ]
+    approved_wish_ids = [
+        str(item.get("id") or "").strip()
+        for item in wishes
+        if str(item.get("status") or "").strip().lower() == "approved"
+    ]
+    checkout_wishes = (
+        [
+            item
+            for item in wishes
+            if str(item.get("id") or "").strip() in selected_ids
+            and str(item.get("status") or "").strip().lower() == "approved"
+        ]
+        if selected_ids
+        else wishes
+    )
+    checkout_wish_count = len(checkout_wishes)
+    if checkout_wish_count == 0:
+        raise HTTPException(400, "No approved wishes selected for checkout")
+
+    request_profile = _normalize_country_profile(
+        row.get("country_profile"), fallback="india"
+    )
+    checkout_profile = _normalize_country_profile(
+        body.country_profile, fallback=request_profile
+    )
+    checkout_country_code = (
+        (body.country_code or row.get("country_code") or "").strip().upper()
+    )
+    if checkout_country_code:
+        checkout_profile = _profile_from_country_code(checkout_country_code)
+
+    if (
+        checkout_profile == "outside_india"
+        and not _combined_international_payments_enabled()
+    ):
+        raise HTTPException(
+            409, _combined_international_payment_message("Combined Healings")
+        )
+
+    if str(row.get("checkout_status") or "").strip().lower() == "paid":
+        raise HTTPException(409, "Checkout already completed")
+
+    existing_session_id = row.get("checkout_session_id")
+    if existing_session_id:
+        existing_session_ref = (
+            get_firestore()
+            .collection(COMBINED_HEALING_PAYMENT_SESSION_COLLECTION)
+            .document(existing_session_id)
+        )
+        existing_session_ref.delete()
+
+    wish_count = checkout_wish_count
+    amount = _combined_total_amount(checkout_profile, wish_count)
     currency = _combined_currency(checkout_profile)
     if amount <= 0:
         raise HTTPException(400, "Invalid checkout amount")
@@ -3275,6 +3405,10 @@ async def combined_healings_create_checkout_session(
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(minutes=COMBINED_PAYMENT_SESSION_TTL_MINUTES)
     session_id = f"chpay_{secrets.token_hex(10)}"
+
+    new_request_id = f"req_{secrets.token_hex(8)}"
+    if incoming_request_id:
+        new_request_id = incoming_request_id
 
     session_payload: dict[str, Any] = {
         "uid": uid,
@@ -3290,6 +3424,7 @@ async def combined_healings_create_checkout_session(
         "currency": currency,
         "wish_count": wish_count,
         "selected_wish_ids": selected_ids if selected_ids else [],
+        "request_id": new_request_id,
         "country_profile": checkout_profile,
         "country_code": checkout_country_code or None,
         "created_at": firestore.SERVER_TIMESTAMP,
@@ -3307,6 +3442,8 @@ async def combined_healings_create_checkout_session(
     session = _serialize_combined_payment_session(session_snap)
 
     response_data = dict(session)
+    response_data["request_id"] = new_request_id
+    response_data["request_id"] = new_request_id
     if checkout_profile == "india":
         response_data["qr_src"] = (
             f"/api/payments/upi-qr/combined-healings?amount={amount}&tr={session_id}"
@@ -3323,6 +3460,7 @@ async def combined_healings_create_checkout_session(
             "checkout_session_id": session_id,
             "checkout_wish_count": wish_count,
             "checkout_selected_wish_ids": selected_ids if selected_ids else [],
+            "checkout_request_id": new_request_id,
             "status": "checkout_pending",
             "updated_at": firestore.SERVER_TIMESTAMP,
         },
@@ -4090,6 +4228,18 @@ async def admin_review_combined_healings_request(
 
     req_ref, req_snap, wishes, row = _combined_load_request_state(uid)
     if not req_snap or not row:
+        raise HTTPException(404, "No combined-healings request found")
+
+    incoming_request_id = (body.request_id or "").strip()
+    stored_request_id = (row.get("checkout_request_id") or "").strip()
+    if (
+        stored_request_id
+        and incoming_request_id
+        and stored_request_id != incoming_request_id
+    ):
+        raise HTTPException(
+            409, "Stale request detected. Please refresh and try again."
+        )
         raise HTTPException(404, "Combined-healings request not found")
     if str(row.get("checkout_status") or "").strip().lower() == "paid":
         raise HTTPException(409, "Checkout is already paid for this request")
@@ -4166,6 +4316,18 @@ async def admin_submit_combined_healings_review(
 ) -> dict[str, Any]:
     req_ref, req_snap, wishes, row = _combined_load_request_state(uid)
     if not req_snap or not row:
+        raise HTTPException(404, "No combined-healings request found")
+
+    incoming_request_id = (body.request_id or "").strip()
+    stored_request_id = (row.get("checkout_request_id") or "").strip()
+    if (
+        stored_request_id
+        and incoming_request_id
+        and stored_request_id != incoming_request_id
+    ):
+        raise HTTPException(
+            409, "Stale request detected. Please refresh and try again."
+        )
         raise HTTPException(404, "Combined-healings request not found")
     if str(row.get("checkout_status") or "").strip().lower() == "paid":
         raise HTTPException(409, "Checkout is already paid for this request")
