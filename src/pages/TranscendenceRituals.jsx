@@ -100,7 +100,7 @@ export default function TranscendenceRituals() {
     : 'linear-gradient(to bottom, transparent 0%, rgba(12,10,9,0.2) 74%, rgba(244,242,236,0.58) 90%, var(--bg) 100%)';
 
   return (
-    <div style={{ background: 'var(--bg)', minHeight: '100vh', color: 'var(--fg)' }}>
+    <div style={{ background: 'var(--transcendence-rituals-bg)', minHeight: '100vh', color: 'var(--fg)' }}>
 
       {/* ── HERO ── (overlay text stays white over dark image) */}
       <div ref={heroRef} className="relative h-[78vh] overflow-hidden" style={{ background: '#0c0a09' }}>
@@ -151,15 +151,17 @@ export default function TranscendenceRituals() {
         {/* Faded backdrop numeral */}
         <div
           className="absolute -left-8 lg:left-4 top-12 hero-display select-none pointer-events-none"
-          style={{ fontSize: '13rem', lineHeight: 1, color: 'var(--fg)', opacity: 0.04, fontWeight: 300 }}
+          // style={{ fontSize: '13rem', lineHeight: 1, color: 'var(--fg)', opacity: 0.04, fontWeight: 300 }}
+          style={{ fontSize: '13rem', lineHeight: 1, color: '#f8eaea', opacity: 0.04, fontWeight: 300 }}
         >
           0{activePhase + 1}
         </div>
 
         <div className="relative grid lg:grid-cols-5 gap-12 lg:gap-0">
           {/* Phase selector */}
-          <div className="lg:col-span-2 lg:pr-16 lg:border-r" style={{ borderColor: 'var(--border)' }}>
-            <p className="text-xs tracking-[0.4em] uppercase mb-10" style={{ color: 'var(--accent-text)' }}>
+          <div className="lg:col-span-2 lg:pr-16 lg:border-r" style={{ borderColor: `rgba(255, 255, 255, 0.2)`, }}>
+            {/* <p className="text-xs tracking-[0.4em] uppercase mb-10" style={{ color: 'var(--accent-text)' }}> */}
+            <p className="text-xs tracking-[0.4em] uppercase mb-10" style={{ color: '#9CC8E6' }}>
               ◊ The Journey
             </p>
             <div className="space-y-2">
@@ -169,33 +171,37 @@ export default function TranscendenceRituals() {
                   <button key={phase.number} onClick={() => setActivePhase(i)} className="w-full text-left group">
                     <motion.div
                       className="flex items-center gap-6 py-5 transition-colors duration-300"
-                      style={{ borderBottom: '1px solid var(--border)' }}
+                      style={{ borderBottom: `1px solid rgba(255, 255, 255, 0.08)` }}
                       whileHover={{ x: 4 }}
                       transition={SMOOTH}
                     >
                       <span
                         className="text-xs font-mono transition-colors duration-300"
-                        style={{ color: active ? 'var(--accent-text)' : 'var(--fg3)' }}
+                        // style={{ color: active ? 'var(--accent-text)' : 'var(--fg3)' }}
+                        style={{ color: active ? '#9CC8E6' : `rgba(245, 246, 250, 0.22)` }}
                       >
                         {phase.number}
                       </span>
                       <div>
                         <p
                           className="text-[10px] tracking-[0.3em] uppercase mb-1 transition-colors duration-300"
-                          style={{ color: active ? 'var(--accent-text)' : 'var(--fg3)' }}
+                          // style={{ color: active ? 'var(--accent-text)' : 'var(--fg3)' }}
+                          style={{ color: active ? '#9CC8E6' : `rgba(245, 246, 250, 0.22)` }}
                         >
                           {phase.phase}
                         </p>
                         <p
                           className="text-lg font-light transition-colors duration-300"
-                          style={{ color: active ? 'var(--fg)' : 'var(--fg2)' }}
+                          // style={{ color: active ? 'var(--fg)' : 'var(--fg2)' }}
+                          style={{ color: active ? `rgba(245, 246, 250, 0.94)` : `rgba(245, 246, 250, 0.55)` }}
                         >
                           {phase.title}
                         </p>
                       </div>
                       <span
                         className="ml-auto text-xs transition-colors duration-300"
-                        style={{ color: active ? 'var(--fg2)' : 'var(--fg3)' }}
+                        // style={{ color: active ? 'var(--fg2)' : 'var(--fg3)' }}
+                        style={{ color: active ? `rgba(245, 246, 250, 0.55)` : `rgba(245, 246, 250, 0.22)` }}
                       >
                         {phase.duration}
                       </span>
@@ -222,22 +228,27 @@ export default function TranscendenceRituals() {
                     alt={currentPhase.title}
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 mix-blend-overlay pointer-events-none" style={{ background: 'linear-gradient(135deg, var(--accent-soft), transparent 60%)' }} />
+                  <div className="absolute inset-0 mix-blend-overlay pointer-events-none" style={{ background: 'linear-gradient(135deg, navy, transparent 70%)', opacity: 0.7 }} />
                 </div>
-                <p className="text-xs tracking-[0.4em] uppercase mb-4" style={{ color: 'var(--accent-text)' }}>
+                {/* <p className="text-xs tracking-[0.4em] uppercase mb-4" style={{ color: 'var(--accent-text)' }}> */}
+                <p className="text-xs tracking-[0.4em] uppercase mb-4" style={{ color: '#9CC8E6' }}>
                   {currentPhase.phase}
                 </p>
-                <h2 className="hero-display text-4xl mb-6" style={{ color: 'var(--fg)' }}>
+                {/* <h2 className="hero-display text-4xl mb-6" style={{ color: 'var(--fg)' }}> */}
+                <h2 className="hero-display text-4xl mb-6" style={{ color: '#F5F6FA', opacity: '0.94' }}>
                   {currentPhase.title}
                 </h2>
-                <p className="font-light leading-relaxed text-[15px] max-w-lg" style={{ color: 'var(--fg2)' }}>
+                {/* <p className="font-light leading-relaxed text-[15px] max-w-lg" style={{ color: 'var(--fg2)' }}> */}
+                <p className="font-light leading-relaxed text-[15px] max-w-lg" style={{ color: '#F5F6FA', opacity: '0.55' }}>
                   {currentPhase.description}
                 </p>
+                <br />
                 <Link
                   to={phaseCheckoutUrl}
                   className="mt-10 inline-flex items-center gap-2 text-sm tracking-widest uppercase transition-colors duration-300 expand-link"
                 >
-                  Continue to Retreat Checkout →
+                  {/* Continue to Retreat Checkout → */}
+                  Continue to Retreat Checkout
                 </Link>
               </motion.div>
             </AnimatePresence>
@@ -246,10 +257,12 @@ export default function TranscendenceRituals() {
       </div>
 
       {/* ── CLOSING — mandala motif ── */}
-      <div className="relative py-32 overflow-hidden text-center" style={{ borderTop: '1px solid var(--border)' }}>
+      <div className="relative py-32 overflow-hidden text-center" style={{ borderTop: '1px solid var(--border)', background: '#928c82' }}>
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <Mandala size={460} color="var(--accent)" />
+          {/* <Mandala size={460} color="var(--accent)" /> */}
+          <Mandala size={460} color="white" />
           <div className="absolute"><Mandala size={300} reverse color="var(--fg2)" /></div>
+          {/* <div className="absolute"><Mandala size={300} reverse color="#00ff00" /></div> */}
         </div>
         <div className="relative max-w-2xl mx-auto px-6">
           <p className="text-[10px] tracking-[0.5em] uppercase mb-6" style={{ color: 'var(--accent-text)' }}>

@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { X, Sun, Moon, Globe, UserPlus, LogIn, LogOut } from 'lucide-react';
+import { X, Sun, Moon, Globe, UserPlus, LogIn, LogOut, User } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 import ChatBot from '@/components/ChatBot';
 import { firebaseAuth, firebaseConfigured } from '@/lib/firebaseClient';
@@ -140,31 +140,67 @@ export default function Layout({ children }) {
             backdropFilter: 'blur(8px)',
           }}
         >
-          <Link
-            to={authSignupHref}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] tracking-[0.18em] uppercase hover-feedback"
-            style={{
-              border: `1px solid ${signupTopbarActive ? 'var(--special-border)' : 'transparent'}`,
-              background: signupTopbarActive ? 'var(--special-bg)' : 'transparent',
-              color: signupTopbarActive ? 'var(--special-accent)' : 'var(--fg2)',
-            }}
-          >
-            <UserPlus className="w-3.5 h-3.5" strokeWidth={1.8} />
-            Signup
-          </Link>
+          {!sidebarUser && (
+            <>
+              <Link
+                to={authSignupHref}
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] tracking-[0.18em] uppercase hover-feedback"
+                style={{
+                  border: `1px solid ${signupTopbarActive ? 'var(--special-border)' : 'transparent'}`,
+                  background: signupTopbarActive ? 'var(--special-bg)' : 'transparent',
+                  color: signupTopbarActive ? 'var(--special-accent)' : 'var(--fg2)',
+                }}
+              >
+                <UserPlus className="w-3.5 h-3.5" strokeWidth={1.8} />
+                Signup
+              </Link>
 
-          <Link
-            to={authLoginHref}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] tracking-[0.18em] uppercase hover-feedback"
-            style={{
-              border: `1px solid ${loginTopbarActive ? 'var(--accent)' : 'transparent'}`,
-              background: loginTopbarActive ? 'var(--accent-soft)' : 'transparent',
-              color: loginTopbarActive ? 'var(--accent-text)' : 'var(--fg2)',
-            }}
-          >
-            <LogIn className="w-3.5 h-3.5" strokeWidth={1.8} />
-            Login
-          </Link>
+              <Link
+                to={authLoginHref}
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] tracking-[0.18em] uppercase hover-feedback"
+                style={{
+                  border: `1px solid ${loginTopbarActive ? 'var(--accent)' : 'transparent'}`,
+                  background: loginTopbarActive ? 'var(--accent-soft)' : 'transparent',
+                  color: loginTopbarActive ? 'var(--accent-text)' : 'var(--fg2)',
+                }}
+              >
+                <LogIn className="w-3.5 h-3.5" strokeWidth={1.8} />
+                Login
+              </Link>
+            </>
+          )}
+
+          {sidebarUser && (
+            <>
+              <Link
+                to="/profile"
+                className="inline-flex items-center justify-center rounded-full w-8 h-8 hover-feedback overflow-hidden"
+                style={{
+                  background: 'var(--bg2)',
+                  border: '1px solid var(--border2)',
+                  color: 'var(--fg2)',
+                }}
+                aria-label="Open profile"
+                title={sidebarDisplayName}
+              >
+                {sidebarUser.photoURL ? (
+                  <img src={sidebarUser.photoURL} alt={sidebarDisplayName} className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-4 h-4" strokeWidth={1.8} />
+                )}
+              </Link>
+
+              <button
+                type="button"
+                onClick={onSidebarSignOut}
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] tracking-[0.18em] uppercase hover-feedback"
+                style={{ color: 'var(--fg2)' }}
+              >
+                <LogOut className="w-3.5 h-3.5" strokeWidth={1.8} />
+                Logout
+              </button>
+            </>
+          )}
 
           <button
             onClick={toggleTheme}

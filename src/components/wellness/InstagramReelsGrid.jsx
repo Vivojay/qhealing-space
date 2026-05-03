@@ -231,7 +231,9 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
   return (
     <section
       className="relative py-24 lg:py-32 overflow-hidden"
-      style={{ background: 'var(--bg-elev)', borderTop: '1px solid var(--border)' }}
+      // style={{ background: 'var(--bg-elev)', borderTop: '1px solid var(--border)' }}
+      // style={{ background: 'var(--bg-insta-red)', borderTop: '1px solid var(--border)' }}
+      style={{ background: 'var(--transcendence-rituals-bg)', borderTop: '1px solid var(--border)' }}
     >
       <div className="max-w-6xl lg:max-w-[min(1320px,94vw)] mx-auto px-6 lg:px-8">
         <div className="flex items-end justify-between mb-12 gap-6 flex-wrap">
@@ -241,12 +243,15 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
             viewport={{ once: true }}
             transition={{ duration: 0.8 }}
           >
-            <p className="text-[10px] tracking-[0.45em] uppercase mb-4" style={{ color: 'var(--accent-text)' }}>
+            {/* <p className="text-[10px] tracking-[0.45em] uppercase mb-4" style={{ color: 'var(--accent-text)' }}> */}
+            <p className="text-[10px] tracking-[0.45em] uppercase mb-4" style={{ color: '#9CC8E6' }}>
               ◊ Live from the studio
             </p>
-            <h2 className="hero-display text-4xl lg:text-6xl" style={{ color: 'var(--fg)' }}>
+            {/* <h2 className="hero-display text-4xl lg:text-6xl" style={{ color: 'var(--fg)' }}> */}
+            <h2 className="hero-display text-4xl lg:text-6xl" style={{ color: 'white' }}>
               On{' '}
-              <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontWeight: 300, color: 'var(--accent-text)' }}>
+              {/* <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontWeight: 300, color: 'var(--accent-text)' }}> */}
+              <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontWeight: 300, color: '#9CC8E6' }}>
                 Instagram
               </span>
             </h2>
@@ -262,9 +267,10 @@ export default function InstagramReelsGrid({ handle = FALLBACK_HANDLE }) {
             transition={{ delay: 0.2 }}
             className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full text-[11px] tracking-[0.22em] uppercase hover-accent"
             style={{
-              border: '1px solid var(--border2)',
-              color: 'var(--fg2)',
-              background: 'var(--accent-dim)',
+              border: `1px solid rgba(255, 255, 255, 0.16)`,
+              // color: 'var(--fg2)',
+              color: `rgba(245, 246, 250, 0.55)`,
+              background: `rgba(107, 160, 204, 0.3)`,
             }}
           >
             <Instagram className="w-3.5 h-3.5" strokeWidth={1.8} />

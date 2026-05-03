@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ThemeContext = createContext();
@@ -7,8 +7,12 @@ const DARK_BG  = '#0e1014';
 const LIGHT_BG = '#ECE9E2';
 
 export function ThemeProvider({ children }) {
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(false);
   const [wave, setWave] = useState(null);
+
+  useEffect(() => {
+    document.documentElement.classList.add('light-mode');
+  }, []);
 
   const toggleTheme = useCallback((e) => {
     if (wave) return;
