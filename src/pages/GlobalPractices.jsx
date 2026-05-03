@@ -1,146 +1,140 @@
-import React, { useRef } from 'react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { ArrowUpRight, CalendarDays } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import Footer from '@/components/wellness/Footer';
-import textureVadym from '../assets/textures/vadym-alyekseyenko-0ARnshcVqfc-unsplash.jpg';
+import { apiUrl } from '@/utils';
 
-const practices = [
-  { region: 'East Asia', title: 'Qigong & Tai Chi', desc: 'Ancient Chinese movement arts that cultivate qi (life energy) through slow, intentional motion and breathwork.', image: 'https://images.unsplash.com/photo-1593811167562-9cef47bfc4d7?w=800&q=90' },
-  { region: 'South Asia', title: 'Ayurvedic Medicine', desc: 'The oldest holistic healing system on earth, balancing the three doshas through herbs, diet, and lifestyle.', image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&q=90' },
-  { region: 'Americas', title: 'Shamanic Journeys', desc: 'Indigenous wisdom traditions using drumming, plant medicine, and ceremony to access non-ordinary states of healing.', image: 'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800&q=90' },
-  { region: 'Middle East', title: 'Sufi Movement', desc: 'Sacred whirling and breath practice drawn from the Mevlevi order, used to dissolve the ego into divine presence.', image: 'https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=800&q=90' },
-  { region: 'Africa', title: 'Ubuntu Healing Circles', desc: 'Community-based healing rooted in the African philosophy of interconnectedness — I am because we are.', image: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=800&q=90' },
-  { region: 'Celtic / Japan', title: 'Forest Bathing', desc: 'Shinrin-yoku immersion in sacred groves, drawing on both Celtic animism and Japanese forest therapy traditions.', image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=800&q=90' },
-];
+function formatDate(value) {
+  if (!value) return 'Draft';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Draft';
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
 
 export default function GlobalPractices() {
-  const heroRef = useRef(null);
-  const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
-  const y = useTransform(scrollYProgress, [0, 1], ['0%', '25%']);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await fetch(apiUrl('/api/blogs'));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!cancelled) setRows(Array.isArray(json?.data) ? json.data : []);
+      } catch (err) {
+        if (!cancelled) setError(err?.message || 'Unable to load blogs');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
-      <div ref={heroRef} className="relative h-[55vh] overflow-hidden" style={{ background: '#0c0a09' }}>
-        <motion.div style={{ y }} className="absolute inset-0 scale-110">
-          <img
-            src="https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=1800&q=90"
-            alt=""
-            className="w-full h-full object-cover opacity-40"
-          />
-        </motion.div>
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, #0c0a09 0%, transparent 60%)' }} />
-
-        <div className="absolute top-0 left-0 pointer-events-none" style={{ zIndex: 2 }}>
-          <div
-            className="corner-ring-spin"
-            style={{
-              width: 'clamp(460px, 62vw, 980px)',
-              height: 'clamp(460px, 62vw, 980px)',
-            }}
-          >
-            <svg viewBox="0 0 200 200" className="w-full h-full" aria-hidden="true">
-              <g fill="none" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="100" cy="100" r="93" stroke="var(--accent-soft)" strokeWidth="0.9" />
-                <circle cx="100" cy="100" r="79" stroke="var(--accent)" strokeOpacity="0.45" strokeWidth="0.65" strokeDasharray="2 5" />
-                <path d="M100 7 A93 93 0 0 1 193 100" stroke="var(--accent-text)" strokeWidth="1.4" />
-                <path d="M100 21 A79 79 0 0 1 179 100" stroke="var(--accent)" strokeOpacity="0.8" strokeWidth="1" />
-                <circle cx="100" cy="7" r="1.9" fill="var(--accent-text)" />
-                <circle cx="193" cy="100" r="1.6" fill="var(--accent)" />
-              </g>
-            </svg>
-          </div>
-        </div>
-
-        <div className="absolute bottom-0 left-0 p-10 lg:p-16">
+      <section className="px-6 lg:px-16 pt-24 lg:pt-28 pb-12 lg:pb-16">
+        <div className="max-w-7xl mx-auto">
           <motion.p
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.2 }}
-            className="text-[10px] tracking-[0.45em] uppercase mb-4"
-            style={{ color: 'rgba(250,250,249,0.35)' }}
-          >
-            World Traditions
-          </motion.p>
-          <motion.h1
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className="text-5xl lg:text-7xl font-light tracking-tight"
-            style={{ fontFamily: 'Cormorant Garamond, serif', color: '#fafaf9' }}
-          >
-            Global Practices
-          </motion.h1>
-        </div>
-      </div>
-
-      <div className="relative overflow-hidden">
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: `url(${textureVadym})`,
-            backgroundSize: '560px auto',
-            backgroundRepeat: 'repeat',
-            backgroundPosition: 'center',
-            opacity: 0.18,
-            mixBlendMode: 'soft-light',
-          }}
-          aria-hidden
-        />
-
-        <div className="relative max-w-7xl mx-auto px-8 lg:px-16 py-28 lg:py-36">
-          <motion.p
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-            className="text-[10px] tracking-[0.45em] uppercase mb-16"
+            transition={{ duration: 0.65 }}
+            className="text-[10px] tracking-[0.42em] uppercase mb-5"
             style={{ color: 'var(--accent-text)' }}
           >
-            ◊ Healing wisdom from every corner of the earth
+            ◊ Blogs
           </motion.p>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px" style={{ background: 'var(--border)' }}>
-            {practices.map((p, i) => (
-              <motion.div
-                key={p.title}
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.7, delay: i * 0.08 }}
-                className="peek group overflow-hidden cursor-pointer hover-surface"
-                style={{ background: 'var(--bg)' }}
-                tabIndex={0}
-              >
-                <div className="aspect-[4/3] overflow-hidden relative">
-                  <motion.img
-                    src={p.image}
-                    alt={p.title}
-                    className="w-full h-full object-cover"
-                    whileHover={{ scale: 1.08 }}
-                    transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                  />
-                  <div
-                    className="absolute inset-0 transition-opacity duration-300 group-hover:opacity-0"
-                    style={{ background: 'linear-gradient(to top, var(--bg) 0%, transparent 60%)' }}
-                  />
-                </div>
-                <div className="p-10 lg:p-12">
-                  <p className="text-[10px] tracking-[0.3em] uppercase mb-5" style={{ color: 'var(--accent-text)' }}>
-                    {p.region}
-                  </p>
-                  <h3 className="hero-display text-3xl lg:text-4xl" style={{ color: 'var(--fg)' }}>
-                    {p.title}
-                  </h3>
-                  <div className="peek-content">
-                    <p className="text-sm font-light leading-relaxed" style={{ color: 'var(--fg2)' }}>
-                      {p.desc}
-                    </p>
-                  </div>
-                  <div className="peek-hint mt-6"><span className="dot" /> Discover</div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
+          <motion.h1
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.85, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
+            className="hero-display text-5xl lg:text-7xl max-w-4xl"
+            style={{ color: 'var(--fg)' }}
+          >
+            Notes, reflections, and
+            <span
+              style={{
+                color: 'var(--accent-text)',
+                fontFamily: 'Cormorant Garamond, serif',
+                fontStyle: 'italic',
+                fontWeight: 300,
+              }}
+            >
+              {' '}teaching pieces
+            </span>
+          </motion.h1>
         </div>
-      </div>
+      </section>
+
+      <section className="px-6 lg:px-16 pb-16 lg:pb-24">
+        <div className="max-w-7xl mx-auto">
+          {loading ? (
+            <p className="text-sm font-light" style={{ color: 'var(--fg2)' }}>
+              Loading blogs…
+            </p>
+          ) : error ? (
+            <p className="text-sm font-light" style={{ color: 'var(--fg2)' }}>
+              {error}
+            </p>
+          ) : rows.length === 0 ? (
+            <div className="rounded-[28px] p-8" style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}>
+              <p className="text-sm font-light" style={{ color: 'var(--fg2)' }}>
+                No published blogs yet.
+              </p>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {rows.map((post, index) => (
+                <motion.article
+                  key={post.id || post.slug}
+                  initial={{ opacity: 0, y: 18 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: '-80px' }}
+                  transition={{ duration: 0.7, delay: index * 0.03 }}
+                  className="rounded-[28px] overflow-hidden"
+                  style={{ border: '1px solid var(--border2)', background: 'var(--bg-elev)' }}
+                >
+                  <div className="aspect-[16/10]" style={{ background: 'var(--bg2)' }}>
+                    {post.cover_image ? (
+                      <img src={post.cover_image} alt={post.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full" style={{ background: 'linear-gradient(135deg, var(--accent-dim), transparent 72%)' }} />
+                    )}
+                  </div>
+                  <div className="p-6">
+                    <div className="flex items-center gap-2 mb-4 text-[10px] tracking-[0.18em] uppercase" style={{ color: 'var(--fg3)' }}>
+                      <CalendarDays className="w-3.5 h-3.5" />
+                      {formatDate(post.published_at || post.updated_at)}
+                    </div>
+                    <h2 className="text-2xl leading-tight" style={{ color: 'var(--fg)' }}>
+                      {post.title}
+                    </h2>
+                    <p className="mt-3 text-sm font-light leading-relaxed min-h-[72px]" style={{ color: 'var(--fg2)' }}>
+                      {post.excerpt || 'Open the post to read more.'}
+                    </p>
+                    <Link
+                      to={`/blogs/${post.slug}`}
+                      className="inline-flex items-center gap-2 mt-5 text-[10px] tracking-[0.22em] uppercase"
+                      style={{ color: 'var(--accent-text)' }}
+                    >
+                      Read article
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                </motion.article>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
 
       <Footer />
     </div>

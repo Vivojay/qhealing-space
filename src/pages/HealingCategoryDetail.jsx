@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import Footer from '@/components/wellness/Footer';
 import { getNonVedicCategories } from '@/data/serviceCatalog';
 
@@ -17,7 +17,7 @@ const CATEGORY_IMAGES = {
   'Specialized Healing Programs': 'https://images.unsplash.com/photo-1593811167562-9cef47bfc4d7?w=900&q=90',
 };
 
-function HealingRow({ h, i }) {
+function ServiceRow({ h, i, backHref }) {
   const [hovered, setHovered] = useState(false);
   const [open, setOpen] = useState(false);
   return (
@@ -67,10 +67,10 @@ function HealingRow({ h, i }) {
             <span className="w-1 h-1 rounded-full" style={{ background: 'var(--accent)' }} /> {h.duration}
           </li>
           <li className="flex items-center gap-2 text-[11px] tracking-widest uppercase" style={{ color: 'var(--fg2)' }}>
-            <span className="w-1 h-1 rounded-full" style={{ background: 'var(--accent)' }} /> {h.count}
+            <span className="w-1 h-1 rounded-full" style={{ background: 'var(--accent)' }} /> 1-on-1
           </li>
           <li className="flex items-center gap-2 text-[11px] tracking-widest uppercase" style={{ color: 'var(--fg2)' }}>
-            <span className="w-1 h-1 rounded-full" style={{ background: 'var(--accent)' }} /> Browseable detail page
+            <span className="w-1 h-1 rounded-full" style={{ background: 'var(--accent)' }} /> In-person · Online
           </li>
         </ul>
 
@@ -85,42 +85,57 @@ function HealingRow({ h, i }) {
             <span className="dot" />
             {open ? 'Less' : 'Read more'}
           </button>
-          <Link
-            to={`/healings/${encodeURIComponent(h.slug)}`}
-            className="text-xs tracking-widest uppercase pb-1 hover-accent inline-block"
-            style={{ color: 'var(--accent-text)', borderBottom: '1px solid var(--accent-soft)' }}
-          >
-            Explore services →
-          </Link>
+          <div className="flex items-center gap-5">
+            <Link
+              to={backHref}
+              className="text-xs tracking-widest uppercase pb-1 hover-accent inline-block"
+              style={{ color: 'var(--fg3)', borderBottom: '1px solid var(--border2)' }}
+            >
+              Back
+            </Link>
+            <Link
+              to={`/booking?service=${encodeURIComponent(h.name)}`}
+              className="text-xs tracking-widest uppercase pb-1 hover-accent inline-block"
+              style={{ color: 'var(--accent-text)', borderBottom: '1px solid var(--accent-soft)' }}
+            >
+              Book →
+            </Link>
+          </div>
         </div>
       </div>
     </motion.div>
   );
 }
 
-export default function Healings() {
+export default function HealingCategoryDetail() {
+  const { categorySlug } = useParams();
   const heroRef = useRef(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '28%']);
 
-  const categories = useMemo(() => {
-    return getNonVedicCategories().map((category) => ({
-      slug: category.slug,
-      name: category.title,
-      tag: 'Healing Category',
-      desc: `This category contains ${category.services.length} bookable services. Open it to see every line-item, read each service description clearly, and book the exact modality you want.`,
-      duration: category.number,
-      count: `${category.services.length} services`,
-      image: CATEGORY_IMAGES[category.title] || 'https://images.unsplash.com/photo-1600618528240-fb9fc964b853?w=900&q=90',
-    }));
-  }, []);
+  const category = useMemo(
+    () => getNonVedicCategories().find((item) => item.slug === categorySlug) || null,
+    [categorySlug]
+  );
+
+  if (!category) {
+    return <Navigate to="/healings" replace />;
+  }
+
+  const services = category.services.map((service) => ({
+    name: service.name,
+    tag: category.title,
+    desc: service.description,
+    duration: service.duration.split('/')[0].trim(),
+    image: CATEGORY_IMAGES[category.title] || 'https://images.unsplash.com/photo-1600618528240-fb9fc964b853?w=900&q=90',
+  }));
 
   return (
     <div style={{ background: 'var(--bg)' }}>
       <div ref={heroRef} className="relative h-[55vh] overflow-hidden" style={{ background: '#0c0a09', position: 'relative' }}>
         <motion.div style={{ y }} className="absolute inset-0 scale-110">
           <img
-            src="https://images.unsplash.com/photo-1600618528240-fb9fc964b853?w=1800&q=90"
+            src={CATEGORY_IMAGES[category.title] || 'https://images.unsplash.com/photo-1600618528240-fb9fc964b853?w=1800&q=90'}
             alt=""
             className="w-full h-full object-cover opacity-35"
           />
@@ -134,7 +149,7 @@ export default function Healings() {
             className="text-[10px] tracking-[0.45em] uppercase mb-4"
             style={{ color: 'rgba(250,250,249,0.35)' }}
           >
-            Healing categories
+            {category.number} · {category.services.length} services
           </motion.p>
           <motion.h1
             initial={{ opacity: 0, y: 24 }}
@@ -143,29 +158,15 @@ export default function Healings() {
             className="text-5xl lg:text-7xl font-light tracking-tight"
             style={{ fontFamily: 'Cormorant Garamond, serif', color: '#fafaf9' }}
           >
-            Healings
+            {category.title}
           </motion.h1>
         </div>
       </div>
 
       <div>
-        {categories.map((h, i) => <HealingRow key={h.slug} h={h} i={i} />)}
-      </div>
-
-      <div className="px-8 lg:px-16 py-16" style={{ borderTop: '1px solid var(--border)' }}>
-        <p className="text-sm font-light mb-2" style={{ color: 'var(--fg2)' }}>
-          Each category now opens into its own non-navbar detail page
-        </p>
-        <p className="text-xs" style={{ color: 'var(--fg3)' }}>
-          That second level contains the actual row-level services with their own descriptions and their own booking buttons.
-        </p>
-        <Link
-          to={`/booking?service=${encodeURIComponent('Other / Not sure yet')}`}
-          className="inline-block mt-8 text-xs tracking-widest uppercase pb-1 hover-accent"
-          style={{ color: 'var(--accent-text)', borderBottom: '1px solid var(--accent-soft)' }}
-        >
-          Enquire for personalised guidance →
-        </Link>
+        {services.map((h, i) => (
+          <ServiceRow key={`${h.name}-${i}`} h={h} i={i} backHref="/healings" />
+        ))}
       </div>
 
       <Footer />

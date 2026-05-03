@@ -6,10 +6,13 @@ export function createPageUrl(page) {
     'Combined Healings': '/combined-healings',
     'Auth': '/auth',
     'Healings': '/healings',
-    'Global Practices': '/global-practices',
+    'Blogs': '/blogs',
+    'Global Practices': '/blogs',
     'Retreats': '/retreats',
-    'Hindu Rituals': '/hindu-rituals',
-    'Transcendence Rituals': '/transcendence-rituals',
+    'Vedic Rituals': '/vedic-rituals',
+    'Hindu Rituals': '/vedic-rituals',
+    'FAQ': '/faq',
+    'Transcendence Rituals': '/faq',
     'Booking': '/booking',
   };
   return routes[page] || '/';

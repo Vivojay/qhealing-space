@@ -126,6 +126,18 @@ COMBINED_HEALING_FEE_USD_PER_WISH = 80
 SITE_CHAT_COLLECTION = "site_chat_threads"
 SITE_CHAT_MAX_MESSAGES = 120
 SITE_CHAT_MAX_MESSAGE_LENGTH = 2000
+BLOG_COLLECTION = "blogs"
+BLOG_MEDIA_PREFIX = "blogs/media"
+BLOG_ALLOWED_MEDIA_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+}
+BLOG_STATUS_VALUES: tuple[str, ...] = ("draft", "published")
 COMBINED_HEALING_MAX_WISHES = max(
     1, min(int(os.environ.get("COMBINED_HEALING_MAX_WISHES", "40")), 120)
 )
@@ -1517,6 +1529,12 @@ def _guess_extension(upload: UploadFile) -> str:
         return "webp"
     if source.endswith(".gif"):
         return "gif"
+    if source.endswith(".mp4"):
+        return "mp4"
+    if source.endswith(".webm"):
+        return "webm"
+    if source.endswith(".mov"):
+        return "mov"
     ctype = (upload.content_type or "").lower()
     if ctype == "image/jpeg":
         return "jpg"
@@ -1526,6 +1544,12 @@ def _guess_extension(upload: UploadFile) -> str:
         return "webp"
     if ctype == "image/gif":
         return "gif"
+    if ctype == "video/mp4":
+        return "mp4"
+    if ctype == "video/webm":
+        return "webm"
+    if ctype == "video/quicktime":
+        return "mov"
     return "bin"
 
 
@@ -2555,6 +2579,35 @@ class CombinedHealingAdminReviewRequest(BaseModel):
 class CombinedHealingAdminSubmitReviewRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
     request_id: str | None = Field(default=None, max_length=64)
+
+
+class BlogBlockInput(BaseModel):
+    type: str = Field(min_length=2, max_length=64)
+    id: str | None = Field(default=None, max_length=96)
+    text: str | None = None
+    content: str | None = None
+    title: str | None = Field(default=None, max_length=240)
+    label: str | None = Field(default=None, max_length=160)
+    href: str | None = Field(default=None, max_length=1200)
+    url: str | None = Field(default=None, max_length=4000)
+    alt: str | None = Field(default=None, max_length=300)
+    caption: str | None = Field(default=None, max_length=600)
+    height: int | None = Field(default=None, ge=0, le=2000)
+    columns: list[dict[str, Any]] = Field(default_factory=list, max_length=4)
+
+
+class BlogUpsertRequest(BaseModel):
+    slug: str | None = Field(default=None, max_length=160)
+    title: str = Field(min_length=2, max_length=240)
+    excerpt: str | None = Field(default=None, max_length=1200)
+    cover_image: str | None = Field(default=None, max_length=4000)
+    status: str = Field(default="draft", max_length=32)
+    tags: list[str] = Field(default_factory=list, max_length=24)
+    author_name: str | None = Field(default=None, max_length=160)
+    published_at: str | None = Field(default=None, max_length=64)
+    blocks: list[BlogBlockInput] = Field(default_factory=list, max_length=200)
+    meta_title: str | None = Field(default=None, max_length=240)
+    meta_description: str | None = Field(default=None, max_length=600)
 
 
 def _serialize_consult_message(doc: Any) -> dict[str, Any]:
@@ -4130,6 +4183,111 @@ async def upi_qr_deprecated() -> Response:
 # ────────────────────────────── ADMIN ──────────────────────────────
 
 
+def _normalize_blog_status(raw_status: str | None) -> str:
+    status = str(raw_status or "draft").strip().lower() or "draft"
+    if status not in BLOG_STATUS_VALUES:
+        raise HTTPException(400, "Invalid blog status")
+    return status
+
+
+def _slugify_blog(raw_value: str | None) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "-", str(raw_value or "").strip().lower()).strip("-")
+    cleaned = re.sub(r"-{2,}", "-", cleaned)
+    if len(cleaned) < 2:
+        raise HTTPException(400, "Blog slug is too short")
+    return cleaned[:160]
+
+
+def _serialize_blog_block(block: Any) -> dict[str, Any]:
+    if isinstance(block, BlogBlockInput):
+        raw = block.model_dump()
+    elif isinstance(block, dict):
+        raw = dict(block)
+    else:
+        return {}
+    data = {k: v for k, v in raw.items() if v not in (None, "", [], {})}
+    if "columns" in data and isinstance(data["columns"], list):
+        normalized_columns: list[dict[str, Any]] = []
+        for col in data["columns"][:4]:
+            if not isinstance(col, dict):
+                continue
+            child_blocks: list[dict[str, Any]] = []
+            for child in (col.get("blocks") or []):
+                serialized_child = _serialize_blog_block(child)
+                if serialized_child:
+                    child_blocks.append(serialized_child)
+            normalized_columns.append(
+                {
+                    **{k: v for k, v in col.items() if k != "blocks" and v not in (None, "", [], {})},
+                    "blocks": child_blocks,
+                }
+            )
+        data["columns"] = normalized_columns
+    return data
+
+
+def _serialize_blog_doc(doc: Any, include_drafts: bool = False) -> dict[str, Any]:
+    data = doc.to_dict() or {}
+    status = _normalize_blog_status(data.get("status") or "draft")
+    published_at = _iso_value(data.get("published_at"))
+    updated_at = _iso_value(data.get("updated_at"))
+    created_at = _iso_value(data.get("created_at"))
+    payload = {
+        "id": doc.id,
+        "slug": data.get("slug") or doc.id,
+        "title": data.get("title") or "Untitled",
+        "excerpt": data.get("excerpt") or "",
+        "cover_image": data.get("cover_image") or "",
+        "status": status,
+        "tags": [str(tag).strip() for tag in (data.get("tags") or []) if str(tag).strip()],
+        "author_name": data.get("author_name") or "Vartika Shukla",
+        "published_at": published_at,
+        "updated_at": updated_at,
+        "created_at": created_at,
+        "meta_title": data.get("meta_title") or "",
+        "meta_description": data.get("meta_description") or "",
+        "blocks": [_serialize_blog_block(block) for block in (data.get("blocks") or [])],
+    }
+    if not include_drafts and status != "published":
+        raise HTTPException(404, "Blog not found")
+    return payload
+
+
+def _blog_slug_exists(slug: str, exclude_id: str | None = None) -> bool:
+    docs = get_firestore().collection(BLOG_COLLECTION).where("slug", "==", slug).stream()
+    for doc in docs:
+        if exclude_id and doc.id == exclude_id:
+            continue
+        return True
+    return False
+
+
+async def _upload_blog_media(file: UploadFile) -> dict[str, Any]:
+    content_type = (file.content_type or "").lower().strip()
+    if content_type not in BLOG_ALLOWED_MEDIA_TYPES:
+        raise HTTPException(400, f"Unsupported media type: {file.content_type or 'unknown'}")
+    raw = await file.read()
+    await file.close()
+    if not raw:
+        raise HTTPException(400, "Uploaded file is empty")
+    try:
+        bucket = get_storage_bucket()
+    except RuntimeError as exc:
+        raise HTTPException(503, "Media upload is not configured") from exc
+    ext = _guess_extension(file)
+    safe_name = _safe_storage_name(file.filename or f"blog-media.{ext}")
+    object_path = f"{BLOG_MEDIA_PREFIX}/{int(time.time())}-{secrets.token_hex(5)}-{safe_name}"
+    blob = bucket.blob(object_path)
+    blob.upload_from_string(raw, content_type=content_type)
+    return {
+        "path": object_path,
+        "url": _signed_url_for_storage_path(object_path),
+        "name": file.filename or safe_name,
+        "content_type": content_type,
+        "size_bytes": len(raw),
+    }
+
+
 class AdminLoginRequest(BaseModel):
     password: str
 
@@ -4226,6 +4384,7 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
         "awaiting_payment": 0,
         "paid": 0,
     }
+    blog_counts: dict[str, int] = {"draft": 0, "published": 0}
     combined_total_review_count = 0
     try:
         docs = db.collection(COMBINED_HEALING_COLLECTION).stream()
@@ -4242,6 +4401,14 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
             if checkout_status in combined_checkout_counts:
                 combined_checkout_counts[checkout_status] += 1
             combined_total_review_count += int(data.get("review_count") or 0)
+    except Exception:
+        pass
+
+    try:
+        docs = db.collection(BLOG_COLLECTION).stream()
+        for d in docs:
+            status = _normalize_blog_status((d.to_dict() or {}).get("status") or "draft")
+            blog_counts[status] += 1
     except Exception:
         pass
 
@@ -4275,6 +4442,10 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
             "fee_inr_per_wish": COMBINED_HEALING_FEE_INR_PER_WISH,
             "fee_usd_per_wish": COMBINED_HEALING_FEE_USD_PER_WISH,
         },
+        "blogs": {
+            **blog_counts,
+            "total": sum(blog_counts.values()),
+        },
         "admin_badges": {
             "newsletter": sub_count,
             "instant_consult": consult_counts["new"] + consult_counts["inprogress"],
@@ -4282,12 +4453,42 @@ async def admin_metrics(_=Depends(require_admin)) -> dict[str, Any]:
             "combined_healings": combined_counts["in_review"]
             + combined_counts["needs_correction"]
             + combined_checkout_counts["awaiting_payment"],
+            "blogs": blog_counts["draft"],
         },
         "firebase_configured": bool(os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")),
         "config_present": True,
         "config_source": config_source,
         "server_time": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/api/blogs")
+async def public_list_blogs(limit: int = 48) -> dict[str, Any]:
+    safe_limit = max(1, min(limit, 100))
+    docs = list(get_firestore().collection(BLOG_COLLECTION).limit(safe_limit).stream())
+    rows = []
+    for doc in docs:
+        try:
+            row = _serialize_blog_doc(doc, include_drafts=False)
+        except HTTPException:
+            continue
+        rows.append(row)
+    rows.sort(
+        key=lambda item: item.get("published_at") or item.get("updated_at") or "",
+        reverse=True,
+    )
+    return {"data": rows, "count": len(rows)}
+
+
+@app.get("/api/blogs/{slug}")
+async def public_get_blog(slug: str) -> dict[str, Any]:
+    safe_slug = _slugify_blog(slug)
+    docs = list(
+        get_firestore().collection(BLOG_COLLECTION).where("slug", "==", safe_slug).limit(1).stream()
+    )
+    if not docs:
+        raise HTTPException(404, "Blog not found")
+    return {"data": _serialize_blog_doc(docs[0], include_drafts=False)}
 
 
 @app.get("/api/admin/instagram")
@@ -4336,6 +4537,135 @@ async def admin_set_curation(
 @app.get("/api/admin/instagram/curation")
 async def admin_get_curation(_=Depends(require_admin)) -> dict[str, Any]:
     return _get_doc(*CURATION_DOC) or {"selected_ids": []}
+
+
+@app.get("/api/admin/blogs")
+async def admin_list_blogs(
+    status: str | None = None,
+    query: str | None = None,
+    sort_by: str = "updated_at",
+    sort_dir: str = "desc",
+    limit: int = 200,
+    _=Depends(require_admin),
+) -> dict[str, Any]:
+    safe_limit = max(1, min(limit, 500))
+    rows = [
+        _serialize_blog_doc(doc, include_drafts=True)
+        for doc in get_firestore().collection(BLOG_COLLECTION).limit(safe_limit).stream()
+    ]
+    if status:
+        status_filter = _normalize_blog_status(status)
+        rows = [row for row in rows if row.get("status") == status_filter]
+    if query:
+        needle = query.strip().lower()
+        rows = [
+            row
+            for row in rows
+            if needle in str(row.get("title") or "").lower()
+            or needle in str(row.get("slug") or "").lower()
+            or needle in str(row.get("excerpt") or "").lower()
+            or any(needle in str(tag).lower() for tag in (row.get("tags") or []))
+        ]
+    reverse = str(sort_dir or "desc").lower() != "asc"
+    if sort_by not in {"updated_at", "published_at", "title", "status"}:
+        sort_by = "updated_at"
+    rows.sort(key=lambda item: str(item.get(sort_by) or ""), reverse=reverse)
+    return {"data": rows, "count": len(rows)}
+
+
+@app.get("/api/admin/blogs/{blog_id}")
+async def admin_get_blog(blog_id: str, _=Depends(require_admin)) -> dict[str, Any]:
+    snap = get_firestore().collection(BLOG_COLLECTION).document(blog_id).get()
+    if not snap.exists:
+        raise HTTPException(404, "Blog not found")
+    return {"data": _serialize_blog_doc(snap, include_drafts=True)}
+
+
+@app.post("/api/admin/blogs")
+async def admin_create_blog(body: BlogUpsertRequest, _=Depends(require_admin)) -> dict[str, Any]:
+    now_iso = datetime.now(timezone.utc).isoformat()
+    title = body.title.strip()
+    safe_slug = _slugify_blog(body.slug or title)
+    if _blog_slug_exists(safe_slug):
+        raise HTTPException(409, "Blog slug already exists")
+    status = _normalize_blog_status(body.status)
+    ref = get_firestore().collection(BLOG_COLLECTION).document()
+    published_at = body.published_at if status == "published" else None
+    payload = {
+        "slug": safe_slug,
+        "title": title,
+        "excerpt": (body.excerpt or "").strip(),
+        "cover_image": (body.cover_image or "").strip(),
+        "status": status,
+        "tags": [str(tag).strip() for tag in body.tags if str(tag).strip()],
+        "author_name": (body.author_name or "Vartika Shukla").strip(),
+        "published_at": published_at or (now_iso if status == "published" else None),
+        "updated_at": firestore.SERVER_TIMESTAMP,
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "blocks": [_serialize_blog_block(block) for block in body.blocks],
+        "meta_title": (body.meta_title or "").strip(),
+        "meta_description": (body.meta_description or "").strip(),
+    }
+    ref.set(payload)
+    return {"ok": True, "data": _serialize_blog_doc(ref.get(), include_drafts=True)}
+
+
+@app.put("/api/admin/blogs/{blog_id}")
+async def admin_update_blog(
+    blog_id: str, body: BlogUpsertRequest, _=Depends(require_admin)
+) -> dict[str, Any]:
+    ref = get_firestore().collection(BLOG_COLLECTION).document(blog_id)
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(404, "Blog not found")
+    existing = snap.to_dict() or {}
+    title = body.title.strip()
+    safe_slug = _slugify_blog(body.slug or title)
+    if _blog_slug_exists(safe_slug, exclude_id=blog_id):
+        raise HTTPException(409, "Blog slug already exists")
+    status = _normalize_blog_status(body.status)
+    existing_published_at = _iso_value(existing.get("published_at"))
+    next_published_at = (
+        body.published_at
+        or existing_published_at
+        or (datetime.now(timezone.utc).isoformat() if status == "published" else None)
+    )
+    ref.set(
+        {
+            "slug": safe_slug,
+            "title": title,
+            "excerpt": (body.excerpt or "").strip(),
+            "cover_image": (body.cover_image or "").strip(),
+            "status": status,
+            "tags": [str(tag).strip() for tag in body.tags if str(tag).strip()],
+            "author_name": (body.author_name or "Vartika Shukla").strip(),
+            "published_at": next_published_at if status == "published" else None,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+            "blocks": [_serialize_blog_block(block) for block in body.blocks],
+            "meta_title": (body.meta_title or "").strip(),
+            "meta_description": (body.meta_description or "").strip(),
+        },
+        merge=True,
+    )
+    return {"ok": True, "data": _serialize_blog_doc(ref.get(), include_drafts=True)}
+
+
+@app.delete("/api/admin/blogs/{blog_id}")
+async def admin_delete_blog(blog_id: str, _=Depends(require_admin)) -> dict[str, Any]:
+    ref = get_firestore().collection(BLOG_COLLECTION).document(blog_id)
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(404, "Blog not found")
+    ref.delete()
+    return {"ok": True, "id": blog_id}
+
+
+@app.post("/api/admin/blogs/media")
+async def admin_upload_blog_media(
+    file: UploadFile = File(...), _=Depends(require_admin)
+) -> dict[str, Any]:
+    uploaded = await _upload_blog_media(file)
+    return {"ok": True, "data": uploaded}
 
 
 @app.get("/api/admin/newsletter/subscribers")

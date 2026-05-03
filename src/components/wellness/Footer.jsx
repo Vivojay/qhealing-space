@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Instagram, Mail, MapPin, Phone, ArrowUpRight } from 'lucide-react';
+import { Instagram, Mail, MapPin, Phone, ArrowUpRight, Facebook, Youtube } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import NewsletterSignup from './NewsletterSignup';
 
@@ -133,25 +133,27 @@ export default function Footer() {
                 background: 'linear-gradient(180deg, var(--accent-dim), transparent)',
               }}
             >
-              <p className="text-[10px] tracking-[0.3em] uppercase mb-5" style={{ color: 'var(--fg3)' }}>Explore</p>
+              <p className="text-[10px] tracking-[0.3em] uppercase mb-5" style={{ color: 'var(--fg3)' }}>Socials</p>
               <ul className="space-y-2">
                 {[
-                  ['Home', '/'],
-                  ['Healings', '/healings'],
-                  ['Combined Healings', '/combined-healings'],
-                  ['Global Practices', '/global-practices'],
-                  ['Retreats', '/retreats'],
-                  ['Hindu Rituals', '/hindu-rituals'],
-                ].map(([label, href]) => (
+                  ['Instagram', 'https://www.instagram.com/quantum_healingspace', Instagram],
+                  ['Facebook', 'https://www.facebook.com/vartika.shukla.92', Facebook],
+                  ['YouTube', 'https://youtube.com', Youtube],
+                ].map(([label, href, Icon]) => (
                   <li key={href}>
-                    <Link
-                      to={href}
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="group flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-light hover-accent"
                       style={{ color: 'var(--fg2)' }}
                     >
-                      <span>{label}</span>
+                      <span className="inline-flex items-center gap-2">
+                        <Icon className="w-3.5 h-3.5" strokeWidth={1.7} />
+                        {label}
+                      </span>
                       <ArrowUpRight className="w-3.5 h-3.5 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" strokeWidth={1.8} />
-                    </Link>
+                    </a>
                   </li>
                 ))}
               </ul>
@@ -212,24 +214,6 @@ export default function Footer() {
                       <Mail className="w-3.5 h-3.5" style={{ color: 'var(--accent-text)' }} strokeWidth={1.5} />
                     </div>
                     <span className="min-w-0 break-all text-sm font-light leading-snug">vartikashukla@xyz.com</span>
-                  </a>
-                </li>
-                <li className="pt-1">
-                  <a
-                    href="https://www.instagram.com/quantum_healingspace"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group footer-contact-row flex w-full items-center gap-3 mt-1 rounded-lg px-3 py-2 hover-accent"
-                  >
-                    <div
-                      className="footer-icon-chip w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ border: '1px solid var(--border2)' }}
-                    >
-                      <Instagram className="w-3.5 h-3.5" style={{ color: 'var(--fg2)' }} strokeWidth={1.5} />
-                    </div>
-                    <span className="min-w-0 break-all text-[10px] sm:text-[11px] tracking-[0.14em] uppercase" style={{ color: 'var(--fg3)' }}>
-                      @quantum_healingspace
-                    </span>
                   </a>
                 </li>
               </ul>

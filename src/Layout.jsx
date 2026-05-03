@@ -40,10 +40,10 @@ function TopBanner() {
             padding: '2px 8px',
           }}
         >
-          placeholder
+          Notice
         </span>
-        <span style={{ color: '#fff', fontWeight: 400 }} className="ml-2">
-          text
+        <span style={{ color: 'var(--fg)', fontWeight: 400 }} className="ml-2">
+          Payments outside India coming soon
         </span>
       </span>
       <button
@@ -64,10 +64,10 @@ const navItems = [
   { label: 'Instant Consult', page: 'Instant Consult', number: 'IC', special: true },
   { label: 'Combined Healings', page: 'Combined Healings', number: 'CH', special: true },
   { label: 'Healings', page: 'Healings', number: '02' },
-  { label: 'Global Practices', page: 'Global Practices', number: '03' },
-  { label: 'Retreats', page: 'Retreats', number: '04' },
-  { label: 'Hindu Rituals', page: 'Hindu Rituals', number: '05' },
-  { label: 'Transcendence Rituals', page: 'Transcendence Rituals', number: '06' },
+  { label: 'Blogs', page: 'Blogs', number: '03' },
+  { label: 'Vedic Rituals', page: 'Vedic Rituals', number: '04' },
+  { label: 'Retreats', page: 'Retreats', number: '05' },
+  { label: 'FAQ', page: 'FAQ', number: '06' },
 ];
 
 const SIDEBAR_COLLAPSED_WIDTH = 60;

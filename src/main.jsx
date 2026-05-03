@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import Lenis from 'lenis'
 import { ThemeProvider } from '@/context/ThemeContext'
@@ -12,7 +12,9 @@ import InstantConsult from '@/pages/InstantConsult'
 import CombinedHealings from '@/pages/CombinedHealings'
 import AuthPortal from '@/pages/AuthPortal'
 import Healings from '@/pages/Healings'
+import HealingCategoryDetail from '@/pages/HealingCategoryDetail'
 import GlobalPractices from '@/pages/GlobalPractices'
+import BlogPost from '@/pages/BlogPost'
 import Retreats from '@/pages/Retreats'
 import RetreatCheckout from '@/pages/RetreatCheckout'
 import HinduRituals from '@/pages/HinduRituals'
@@ -53,11 +55,16 @@ function AppRoutes() {
           <Route path="/combined-healings" element={<CombinedHealings />} />
           <Route path="/auth" element={<AuthPortal />} />
           <Route path="/healings" element={<Healings />} />
-          <Route path="/global-practices" element={<GlobalPractices />} />
+          <Route path="/healings/:categorySlug" element={<HealingCategoryDetail />} />
+          <Route path="/blogs" element={<GlobalPractices />} />
+          <Route path="/blogs/:slug" element={<BlogPost />} />
+          <Route path="/global-practices" element={<Navigate to="/blogs" replace />} />
           <Route path="/retreats" element={<Retreats />} />
           <Route path="/retreats/:slug/book" element={<RetreatCheckout />} />
-          <Route path="/hindu-rituals" element={<HinduRituals />} />
-          <Route path="/transcendence-rituals" element={<TranscendenceRituals />} />
+          <Route path="/vedic-rituals" element={<HinduRituals />} />
+          <Route path="/hindu-rituals" element={<Navigate to="/vedic-rituals" replace />} />
+          <Route path="/faq" element={<TranscendenceRituals />} />
+          <Route path="/transcendence-rituals" element={<Navigate to="/faq" replace />} />
           <Route path="/booking" element={<Booking />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin/*" element={<Admin />} />

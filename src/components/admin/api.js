@@ -72,6 +72,26 @@ export const adminApi = {
   setCuration: (selected_ids) =>
     apiFetch('/api/admin/instagram/curation', { method: 'PUT', body: { selected_ids } }),
 
+  listBlogs: ({ status, query, sortBy, sortDir, limit } = {}) => {
+    const qs = new URLSearchParams();
+    if (status) qs.set('status', status);
+    if (query) qs.set('query', query);
+    if (sortBy) qs.set('sort_by', sortBy);
+    if (sortDir) qs.set('sort_dir', sortDir);
+    if (limit) qs.set('limit', String(limit));
+    const suffix = qs.toString();
+    return apiFetch(`/api/admin/blogs${suffix ? `?${suffix}` : ''}`);
+  },
+  getBlog: (id) => apiFetch(`/api/admin/blogs/${encodeURIComponent(id)}`),
+  createBlog: (payload) =>
+    apiFetch('/api/admin/blogs', { method: 'POST', body: payload }),
+  updateBlog: (id, payload) =>
+    apiFetch(`/api/admin/blogs/${encodeURIComponent(id)}`, { method: 'PUT', body: payload }),
+  deleteBlog: (id) =>
+    apiFetch(`/api/admin/blogs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  uploadBlogMedia: (formData) =>
+    apiFetch('/api/admin/blogs/media', { method: 'POST', body: formData }),
+
   listSubscribers: () => apiFetch('/api/admin/newsletter/subscribers'),
   deleteSubscriber: (email) =>
     apiFetch(`/api/admin/newsletter/subscribers/${encodeURIComponent(email)}`, { method: 'DELETE' }),

@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Instagram, Mail, MessageSquare, Layers3, MessagesSquare, Settings, LogOut, ExternalLink } from 'lucide-react';
+import { LayoutDashboard, Instagram, Mail, MessageSquare, Layers3, MessagesSquare, Settings, LogOut, ExternalLink, NotebookPen } from 'lucide-react';
 import { adminApi, clearToken } from './api';
 
 const TABS = [
   { to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/admin/instagram', label: 'Instagram', icon: Instagram },
+  { to: '/admin/blogs', label: 'Blogs', icon: NotebookPen },
   { to: '/admin/newsletter', label: 'Newsletter', icon: Mail },
   { to: '/admin/instant-consult', label: 'Instant Consult', icon: MessageSquare },
   { to: '/admin/site-chat', label: 'Site Chat', icon: MessagesSquare },
@@ -71,6 +72,8 @@ export default function AdminLayout({ children, onSignOut }) {
             {TABS.map(({ to, label, icon: Icon, end }) => {
               const badgeKey = to === '/admin/newsletter'
                 ? 'newsletter'
+                : to === '/admin/blogs'
+                  ? 'blogs'
                 : to === '/admin/instant-consult'
                   ? 'instant_consult'
                   : to === '/admin/site-chat'

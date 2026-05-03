@@ -4,6 +4,7 @@ import AdminLogin from '@/components/admin/AdminLogin';
 import AdminLayout from '@/components/admin/AdminLayout';
 import AdminOverview from '@/components/admin/AdminOverview';
 import AdminInstagram from '@/components/admin/AdminInstagram';
+import AdminBlogs from '@/components/admin/AdminBlogs';
 import AdminNewsletter from '@/components/admin/AdminNewsletter';
 import AdminInstantConsult from '@/components/admin/AdminInstantConsult';
 import AdminSiteChat from '@/components/admin/AdminSiteChat';
@@ -48,6 +49,9 @@ export default function Admin() {
       <Routes>
         <Route index element={<AdminOverview />} />
         <Route path="instagram" element={<AdminInstagram />} />
+        <Route path="blogs" element={<AdminBlogs mode="list" />} />
+        <Route path="blogs/new" element={<AdminBlogs mode="new" />} />
+        <Route path="blogs/:blogId/edit" element={<AdminBlogs mode="edit" />} />
         <Route path="newsletter" element={<AdminNewsletter />} />
         <Route path="instant-consult" element={<AdminInstantConsult />} />
         <Route path="site-chat" element={<AdminSiteChat />} />
